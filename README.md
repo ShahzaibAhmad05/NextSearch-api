@@ -10,11 +10,15 @@ This project demonstrates core indexing concepts used in modern search engines.
 ````
 NextSearch
 ├─ backend/
-│  ├─ count.py
 │  ├─ ForwardIndex.cpp
-│  ├─ increment.cpp
+│  ├─ AddDocument.cpp
 │  ├─ InvertedIndex.cpp
 │  └─ lexicon.cpp
+├─ sampleFiles/
+│  ├─ forward_index.txt
+│  ├─ lexicon.txt
+│  ├─ inverted_index.txt
+│  └─ metadata.csv
 ├─ LICENSE
 └─ README.md
 ````
