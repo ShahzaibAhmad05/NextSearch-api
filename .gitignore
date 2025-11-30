@@ -1,6 +1,4 @@
 *.exe
-*.csv
-*.txt
 
 # vscode temporary files
 .vscode
