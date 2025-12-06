@@ -234,6 +234,34 @@ int main() {
             fout << "\n";
         }
     }
+// ---------------------------
+// WRITE 8 BARRELS FROM inv
+// ---------------------------
+{
+    const int NUM_BARRELS = 8;
+    vector<ofstream> bout(NUM_BARRELS);
+    for (int i = 0; i < NUM_BARRELS; ++i) {
+        string fname = "inverted_index_" + to_string(i) + ".idx";
+        bout[i].open(fname);
+    }
+
+    for (auto &kv : inv) {
+        TermID tid = kv.first;
+        auto &plist = kv.second;
+        int b = tid % NUM_BARRELS;
+
+        bout[b] << tid << " " << plist.size() << " ";
+        for (size_t i = 0; i < plist.size(); i++) {
+            bout[b] << plist[i].doc << ":";
+            for (size_t j = 0; j < plist[i].pos.size(); j++) {
+                bout[b] << plist[i].pos[j];
+                if (j + 1 < plist[i].pos.size()) bout[b] << ",";
+            }
+            if (i + 1 < plist.size()) bout[b] << ";";
+        }
+        bout[b] << "\n";
+    }
+}
 
     // ---------------------------
     // WRITE UPDATED LEXICON
