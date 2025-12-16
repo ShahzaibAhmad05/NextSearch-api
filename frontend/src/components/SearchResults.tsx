@@ -8,43 +8,35 @@ type Props = {
 
 export default function SearchResults({ results }: Props) {
   if (!results.length) {
-    return <div style={{ marginTop: 18, color: "#666" }}>No results.</div>;
+    return <div className="mt-3 text-secondary">No results.</div>;
   }
 
   return (
-    <div style={{ marginTop: 18, display: "grid", gap: 12 }}>
+    <div className="mt-3 d-grid gap-3">
       {results.map((r) => (
-        <div
-          key={r.docId}
-          style={{
-            border: "1px solid #e5e5e5",
-            borderRadius: 14,
-            padding: 14,
-            background: "white"
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>
-              {r.url ? (
-                <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
-                  {r.title || "(untitled)"}
-                </a>
-              ) : (
-                <span>{r.title || "(untitled)"}</span>
-              )}
+        <div key={r.docId} className="card shadow-sm">
+          <div className="card-body">
+            <div className="d-flex justify-content-between gap-3">
+              <div className="fw-bold">
+                {r.url ? (
+                  <a className="text-decoration-none" href={r.url} target="_blank" rel="noreferrer">
+                    {r.title || "(untitled)"}
+                  </a>
+                ) : (
+                  <span>{r.title || "(untitled)"}</span>
+                )}
+              </div>
+              <div className="text-secondary small">score: {r.score.toFixed(4)}</div>
             </div>
-            <div style={{ fontSize: 12, color: "#666" }}>
-              score: {r.score.toFixed(4)}
+
+            <div className="mt-2 small text-secondary">
+              docId: {r.docId} • segment: <code>{r.segment}</code> • cord_uid:{" "}
+              <code>{r.cord_uid}</code>
             </div>
-          </div>
 
-          <div style={{ marginTop: 6, fontSize: 13, color: "#555" }}>
-            docId: {r.docId} • segment: <code>{r.segment}</code> • cord_uid:{" "}
-            <code>{r.cord_uid}</code>
-          </div>
-
-          <div style={{ marginTop: 6, fontSize: 13, color: "#111" }}>
-            json_relpath: <code>{r.json_relpath}</code>
+            <div className="mt-2 small">
+              json_relpath: <code>{r.json_relpath}</code>
+            </div>
           </div>
         </div>
       ))}
