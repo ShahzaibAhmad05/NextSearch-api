@@ -13,32 +13,70 @@ export default function SearchResults({ results }: Props) {
 
   return (
     <div className="mt-3 d-grid gap-3">
-      {results.map((r) => (
-        <div key={r.docId} className="card shadow-sm">
+      {results.map((r, idx) => (
+        <div
+          key={r.docId}
+          className="card card-hover shadow-sm fade-in-up"
+          style={{ animationDelay: `${idx * 30}ms` }}
+        >
           <div className="card-body">
-            <div className="d-flex justify-content-between gap-3">
-              <div className="fw-semibold">
-                {r.url ? (
-                  <a className="text-decoration-none" href={r.url} target="_blank" rel="noreferrer">
-                    {r.title || "(untitled)"}
-                  </a>
-                ) : (
-                  <span>{r.title || "(untitled)"}</span>
+            <div className="d-flex align-items-start justify-content-between gap-3">
+              <div className="flex-grow-1">
+                <div className="fw-semibold fs-6 line-clamp-2">
+                  {r.url ? (
+                    <a
+                      className="clean-link"
+                      href={r.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {r.title || "(untitled)"}
+                    </a>
+                  ) : (
+                    <span>{r.title || "(untitled)"}</span>
+                  )}
+                </div>
+
+                <br />
+
+                {/* View Article button */}
+                {r.url && (
+                  <div className="mt-2">
+                    <a
+                      href={r.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-sm btn-outline-primary"
+                    >
+                      View article →
+                    </a>
+                  </div>
                 )}
               </div>
-              <div className="text-secondary small">score: {r.score.toFixed(4)}</div>
-            </div>
 
-            <div className="mt-2 small text-secondary">
-              docId: {r.docId} • segment: <code>{r.segment}</code> • cord_uid: <code>{r.cord_uid}</code>
-            </div>
-
-            <div className="mt-2 small">
-              json_relpath: <code>{r.json_relpath}</code>
+              <div className="text-end">
+                {r.url ? (
+                  <div
+                    className="small text-secondary mt-2 truncate"
+                    style={{ maxWidth: 220 }}
+                  >
+                    {safeHostname(r.url)}
+                  </div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
       ))}
     </div>
   );
+}
+
+function safeHostname(url?: string) {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
 }

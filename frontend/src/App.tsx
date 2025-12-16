@@ -76,7 +76,7 @@ export default function App() {
       <nav className="navbar navbar-expand-lg bg-white border-bottom fixed-top">
         <div className="container" style={{ maxWidth: 980 }}>
           <a className="navbar-brand fw-bold" href="#">
-            NextSearch
+            
           </a>
           <div className="d-flex gap-2">
             <button className="btn btn-outline-dark" onClick={() => setShowAddModal(true)}>
@@ -91,7 +91,7 @@ export default function App() {
         <div className="container pt-4" style={{ maxWidth: 980 }}>
           {/* Hero */}
           <div className="py-4">
-            <h1 className="display-5 fw-bold mb-2">Search</h1>
+            <h1 className="display-5 fw-bold mb-2">NextSearch</h1>
             <div className="text-secondary">
               through 60k+ Cord19 research papers
             </div>

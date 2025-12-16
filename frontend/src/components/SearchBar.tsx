@@ -12,8 +12,9 @@ type Props = {
 
 export default function SearchBar({ query, k, loading, onChangeQuery, onChangeK, onSubmit }: Props) {
   return (
-    <div className="d-flex gap-2 align-items-center flex-wrap">
-      <div className="input-group" style={{ flex: "1 1 420px" }}>
+    <div>
+      <div className="d-flex gap-2 align-items-center flex-wrap">
+        <div className="input-group" style={{ flex: "1 1 420px" }}>
         <input
           className="form-control form-control-lg"
           value={query}
@@ -25,21 +26,24 @@ export default function SearchBar({ query, k, loading, onChangeQuery, onChangeK,
           }}
           placeholder="Search documents..."
         />
+        </div>
+
+        <div className="d-flex align-items-center gap-2">
+          <span className="text-secondary small">Results</span>
+          <input
+            className="form-control"
+            type="number"
+            min={1}
+            max={200}
+            value={k}
+            onChange={(e) => onChangeK(Number(e.target.value))}
+            style={{ width: 110 }}
+            aria-label="Top K"
+          />
+        </div>
       </div>
 
-      <div className="d-flex align-items-center gap-2">
-        <span className="text-secondary small">Results</span>
-        <input
-          className="form-control"
-          type="number"
-          min={1}
-          max={200}
-          value={k}
-          onChange={(e) => onChangeK(Number(e.target.value))}
-          style={{ width: 110 }}
-          aria-label="Top K"
-        />
-      </div>
+      {loading ? <div className="small text-secondary mt-2">Searching…</div> : null}
     </div>
   );
 }
