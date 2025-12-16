@@ -1,277 +1,173 @@
-#include <iostream>
+#include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <iomanip>
 #include <sstream>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
-#include <algorithm>
-#include <cctype>
-#include <cstdint>
+#include <string>
 
-using namespace std;
+#include "cordjson.hpp"
+#include "textutil.hpp"
+#include "indexio.hpp"
 
-using DocID  = uint32_t;
-using TermID = uint32_t;
+namespace fs = std::filesystem;
 
-// ---------------- CSV PARSER ----------------
-vector<string> parse_csv(const string& line) {
-    vector<string> cols;
-    string cur;
-    bool inq = false;
-    for (size_t i = 0; i < line.size(); i++) {
-        char c = line[i];
-        if (c == '"') {
-            if (inq && i + 1 < line.size() && line[i + 1] == '"') {
-                cur.push_back('"');
-                i++;
-            } else inq = !inq;
-        } else if (c == ',' && !inq) {
-            cols.push_back(cur);
-            cur.clear();
-        } else cur.push_back(c);
-    }
-    cols.push_back(cur);
-    return cols;
+static std::string seg_name(uint32_t id) {
+    std::ostringstream ss;
+    ss << "seg_" << std::setw(6) << std::setfill('0') << id;
+    return ss.str();
 }
 
-// ---------------- TOKENIZER ----------------
-vector<string> tokenize(const string& s) {
-    string cleaned;
-    cleaned.reserve(s.size());
-    for (char c : s) {
-        if (isalpha((unsigned char)c) || isspace((unsigned char)c))
-            cleaned.push_back(tolower((unsigned char)c));
-        else
-            cleaned.push_back(' ');
-    }
-    stringstream ss(cleaned);
-    vector<string> out;
-    string tok;
-    while (ss >> tok) out.push_back(tok);
-    return out;
+static std::vector<std::string> load_manifest(const fs::path& manifest_path) {
+    std::vector<std::string> segs;
+    if (!fs::exists(manifest_path)) return segs;
+
+    std::ifstream in(manifest_path, std::ios::binary);
+    uint32_t n = read_u32(in);
+    segs.resize(n);
+    for (uint32_t i=0;i<n;i++) segs[i] = read_string(in);
+    return segs;
 }
 
-struct LexiconEntry {
-    TermID tid;
-    uint32_t df;
-};
+static void save_manifest(const fs::path& manifest_path, const std::vector<std::string>& segs) {
+    std::ofstream out(manifest_path, std::ios::binary);
+    write_u32(out, (uint32_t)segs.size());
+    for (auto& s : segs) write_string(out, s);
+}
 
-struct Posting {
-    DocID doc;
-    vector<uint32_t> pos;
-};
-
-int main() {
-    string new_line;
-    cout << "Enter new metadata.csv line:\n";
-    getline(cin, new_line);
-
-    if (new_line.empty()) {
-        cerr << "Empty input.\n";
+int main(int argc, char** argv) {
+    if (argc < 6) {
+        std::cerr << "Usage: adddocument <INDEX_DIR> <CORD_ROOT> <JSON_REL_PATH> <CORD_UID> <TITLE>\n";
         return 1;
     }
 
-    // ---------------------------
-    // LOAD EXISTING LEXICON
-    // ---------------------------
-    unordered_map<string, LexiconEntry> lexicon;
-    TermID next_tid = 1;
+    fs::path index_dir = fs::path(argv[1]);
+    fs::path cord_root = fs::path(argv[2]);
+    std::string relpath = argv[3];
+    std::string cord_uid = argv[4];
+    std::string title = argv[5];
 
-    {
-        ifstream fin("lexicon.txt");
-        string term;
-        TermID tid;
-        uint32_t df;
-        while (fin >> term >> tid >> df) {
-            lexicon[term] = {tid, df};
-            next_tid = max(next_tid, tid + 1);
-        }
-    }
+    fs::path manifest = index_dir / "manifest.bin";
+    fs::path segments_dir = index_dir / "segments";
+    fs::create_directories(segments_dir);
 
-    // ---------------------------
-    // FIND MAX DOCID IN FORWARD INDEX
-    // ---------------------------
-    DocID last_docID = 0;
-    {
-        ifstream fin("forward_index.txt");
-        string line;
-        while (getline(fin, line)) {
-            if (line.empty()) continue;
-            stringstream ss(line);
-            DocID d;
-            size_t n;
-            ss >> d >> n;
-            last_docID = max(last_docID, d);
-        }
-    }
-    DocID new_docID = last_docID + 1;
+    auto segs = load_manifest(manifest);
+    uint32_t new_id = (uint32_t)segs.size() + 1;
+    std::string new_seg = seg_name(new_id);
+    fs::path segdir = segments_dir / new_seg;
+    fs::create_directories(segdir);
 
-    // ---------------------------
-    // PARSE NEW METADATA ROW
-    // ---------------------------
-    auto cols = parse_csv(new_line);
-    if (cols.size() < 19) {
-        cerr << "Line does not contain 19 columns.\n";
+    fs::path json_path = cord_root / fs::path(relpath);
+    if (!fs::exists(json_path)) {
+        std::cerr << "JSON not found: " << json_path << "\n";
         return 1;
     }
 
-    string title    = cols[3];
-    string abstract = cols[8];
-    string authors  = cols[10];
+    std::string raw = read_file_all(json_path);
+    if (raw.empty()) return 1;
 
-    string text = title + " " + authors + " " + abstract;
+    json j;
+    try { j = json::parse(raw); } catch(...) { return 1; }
 
-    auto tokens = tokenize(text);
+    std::string text = extract_text_from_cord_json(j);
+    auto toks = tokenize(text);
 
-    // --- collect occurrences ---
-    unordered_map<TermID, vector<uint32_t>> positions;
-    unordered_set<string> seen_terms;
-
-    for (uint32_t i = 0; i < tokens.size(); i++) {
-        const string& t = tokens[i];
-
-        auto it = lexicon.find(t);
-        if (it == lexicon.end()) {
-            lexicon[t] = { next_tid++, 1 };
-            positions[ lexicon[t].tid ].push_back(i);
-            seen_terms.insert(t);
-        } else {
-            positions[it->second.tid].push_back(i);
-            if (!seen_terms.count(t)) {
-                it->second.df++;
-                seen_terms.insert(t);
-            }
-        }
+    std::unordered_map<std::string, uint32_t> tf;
+    uint32_t doc_len = 0;
+    for (auto& t : toks) {
+        if (t.size() < 2) continue;
+        if (is_stopword(t)) continue;
+        tf[t] += 1;
+        doc_len += 1;
     }
+    if (doc_len == 0) return 1;
 
-    // ---------------------------
-    // APPEND TO forward_index.txt
-    // ---------------------------
+    // Build term list + forward for single doc
+    std::vector<std::string> id_to_term;
+    id_to_term.reserve(tf.size());
+    std::unordered_map<std::string, uint32_t> term_to_id;
+    term_to_id.reserve(tf.size()*2+1);
+
+    std::vector<std::pair<uint32_t,uint32_t>> fwd;
+    fwd.reserve(tf.size());
+
+    for (auto& kv : tf) {
+        uint32_t tid = (uint32_t)id_to_term.size();
+        term_to_id.emplace(kv.first, tid);
+        id_to_term.push_back(kv.first);
+        fwd.push_back({tid, kv.second});
+    }
+    std::sort(fwd.begin(), fwd.end());
+
+    // Write docs.bin (1 doc)
     {
-        ofstream fout("forward_index.txt", ios::app);
-        fout << new_docID << " " << positions.size() << " ";
-        size_t k = 0;
-
-        for (auto &p : positions) {
-            fout << p.first << ":";
-            for (size_t j = 0; j < p.second.size(); j++) {
-                fout << p.second[j];
-                if (j + 1 < p.second.size()) fout << ",";
-            }
-            if (k + 1 < positions.size()) fout << ";";
-            k++;
-        }
-        fout << "\n";
+        std::ofstream out(segdir / "docs.bin", std::ios::binary);
+        write_u32(out, 1);
+        write_string(out, cord_uid);
+        write_string(out, title);
+        write_string(out, relpath);
+        write_u32(out, doc_len);
     }
 
-    // ---------------------------
-    // UPDATE INVERTED INDEX
-    // ---------------------------
-    unordered_map<TermID, vector<Posting>> inv;
-
+    // stats.bin
     {
-        ifstream fin("inverted_index.txt");
-        string line;
-        while (getline(fin, line)) {
-            if (line.empty()) continue;
-            stringstream ss(line);
-
-            TermID tid;
-            size_t n;
-            ss >> tid >> n;
-
-            string rest;
-            getline(ss, rest);
-            if (!rest.empty() && rest[0]==' ') rest.erase(0,1);
-
-            stringstream rs(rest);
-            string block;
-            while (getline(rs, block, ';')) {
-                if (block.empty()) continue;
-                size_t c = block.find(':');
-                if (c == string::npos) continue;
-
-                DocID d = stoul(block.substr(0, c));
-                string pos_str = block.substr(c + 1);
-
-                vector<uint32_t> pos;
-                stringstream ps(pos_str);
-                string num;
-                while (getline(ps, num, ',')) {
-                    if (!num.empty())
-                        pos.push_back(stoul(num));
-                }
-                inv[tid].push_back({d, pos});
-            }
-        }
+        std::ofstream out(segdir / "stats.bin", std::ios::binary);
+        write_u32(out, 1);
+        write_f32(out, (float)doc_len);
     }
 
-    // add new postings
-    for (auto &p : positions) {
-        TermID tid = p.first;
-        inv[tid].push_back({ new_docID, p.second });
-    }
-
-    // sort postings
-    for (auto &kv : inv)
-        sort(kv.second.begin(), kv.second.end(),
-             [](auto &a, auto &b){ return a.doc < b.doc; });
-
-    // write back inverted index
+    // forward.bin
     {
-        ofstream fout("inverted_index.txt");
-        for (auto &kv : inv) {
-            fout << kv.first << " " << kv.second.size() << " ";
-            for (size_t i = 0; i < kv.second.size(); i++) {
-                fout << kv.second[i].doc << ":";
-                for (size_t j = 0; j < kv.second[i].pos.size(); j++) {
-                    fout << kv.second[i].pos[j];
-                    if (j + 1 < kv.second[i].pos.size()) fout << ",";
-                }
-                if (i + 1 < kv.second.size()) fout << ";";
-            }
-            fout << "\n";
+        std::ofstream out(segdir / "forward.bin", std::ios::binary);
+        write_u32(out, 1);
+        write_u32(out, (uint32_t)fwd.size());
+        for (auto& [tid, tfv] : fwd) {
+            write_u32(out, tid);
+            write_u32(out, tfv);
         }
     }
-// ---------------------------
-// WRITE 8 BARRELS FROM inv
-// ---------------------------
-{
-    const int NUM_BARRELS = 8;
-    vector<ofstream> bout(NUM_BARRELS);
-    for (int i = 0; i < NUM_BARRELS; ++i) {
-        string fname = "inverted_index_" + to_string(i) + ".idx";
-        bout[i].open(fname);
-    }
 
-    for (auto &kv : inv) {
-        TermID tid = kv.first;
-        auto &plist = kv.second;
-        int b = tid % NUM_BARRELS;
-
-        bout[b] << tid << " " << plist.size() << " ";
-        for (size_t i = 0; i < plist.size(); i++) {
-            bout[b] << plist[i].doc << ":";
-            for (size_t j = 0; j < plist[i].pos.size(); j++) {
-                bout[b] << plist[i].pos[j];
-                if (j + 1 < plist[i].pos.size()) bout[b] << ",";
-            }
-            if (i + 1 < plist.size()) bout[b] << ";";
-        }
-        bout[b] << "\n";
-    }
-}
-
-    // ---------------------------
-    // WRITE UPDATED LEXICON
-    // ---------------------------
+    // terms.bin
     {
-        ofstream fout("lexicon.txt");
-        for (auto &kv : lexicon)
-            fout << kv.first << " " << kv.second.tid << " " << kv.second.df << "\n";
+        std::ofstream out(segdir / "terms.bin", std::ios::binary);
+        write_u32(out, (uint32_t)id_to_term.size());
+        for (auto& t : id_to_term) write_string(out, t);
     }
 
-    cout << "Update complete. Added as DocID " << new_docID << "\n";
+    // Now build lexicon+inverted for this segment (same logic as lexicon.cpp but inline)
+    // inverted postings: since only 1 doc, postings list per term is either empty or (doc0, tf)
+    {
+        std::ofstream inv(segdir / "inverted.bin", std::ios::binary);
+        std::ofstream lex(segdir / "lexicon.bin", std::ios::binary);
+        write_u32(lex, (uint32_t)id_to_term.size());
+
+        uint64_t offset = 0;
+        for (uint32_t tid=0; tid<(uint32_t)id_to_term.size(); tid++) {
+            uint32_t df = 0;
+            uint32_t tfv = 0;
+
+            // Find tf for tid
+            // (we can build a small array instead, but fine for 1 doc)
+            for (auto& p : fwd) if (p.first == tid) { df = 1; tfv = p.second; break; }
+
+            write_string(lex, id_to_term[tid]);
+            write_u32(lex, tid);
+            write_u32(lex, df);
+            write_u64(lex, offset);
+            write_u32(lex, df);
+
+            if (df == 1) {
+                write_u32(inv, 0);      // docId=0
+                write_u32(inv, tfv);
+                offset += (sizeof(uint32_t) * 2);
+            }
+        }
+    }
+
+    // Update manifest
+    segs.push_back(new_seg);
+    save_manifest(manifest, segs);
+
+    std::cout << "Added doc into segment: " << new_seg << "\n";
     return 0;
 }

@@ -1,108 +1,139 @@
-#include <iostream>
+#include <filesystem>
 #include <fstream>
-#include <sstream>
-#include <string>
+#include <iostream>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
-#include <cctype>
-#include <cstdint>
+#include <algorithm>
 
-using namespace std;
-using DocID = uint32_t;
-using TermID = uint32_t;
+#include "indexio.hpp"
+#include "barrels.hpp"
 
-// Lexicon entry storing term ID and document frequency
-struct LexiconEntry { TermID term_id; uint32_t doc_freq = 0; };
+namespace fs = std::filesystem;
 
-unordered_map<string, LexiconEntry> lexicon;   // Global lexicon map
-TermID next_term_id = 1;                      // Next available term ID
+struct Posting { uint32_t docId; uint32_t tf; };
 
-// Tokenizes input string into lowercase alphabetic tokens
-vector<string> tokenize(const string& s) {
-    string cleaned; cleaned.reserve(s.size());
-    for (char c : s) cleaned.push_back((isalpha((unsigned char)c) || isspace((unsigned char)c)) ? tolower(c) : ' ');
-    stringstream ss(cleaned);
-    string tok; vector<string> out;
-    while (ss >> tok) out.push_back(tok);
-    return out;
-}
-
-// Parses CSV line with quoted field support
-vector<string> parse_csv(const string& line) {
-    vector<string> cols; string cur; bool inq = false;
-    for (size_t i = 0; i < line.size(); i++) {
-        char c = line[i];
-        if (c == '"') { if (inq && i+1 < line.size() && line[i+1]=='"') cur.push_back('"'), i++; else inq=!inq; }
-        else if (c == ',' && !inq) cols.push_back(cur), cur.clear();
-        else cur.push_back(c);
-    }
-    cols.push_back(cur); return cols;
-}
-
-// Indexes a document by counting unique tokens
-void index_doc(DocID id, const string& text) {
-    (void)id; auto tokens = tokenize(text);
-    unordered_set<string> seen;
-    for (auto& t : tokens) {
-        if (seen.count(t)) continue;
-        auto it = lexicon.find(t);
-        if (it == lexicon.end()) lexicon[t] = { next_term_id++, 1 };
-        else it->second.doc_freq++;
-        seen.insert(t);
-    }
-}
-
-// Main: reads CSV, extracts fields, indexes docs, writes lexicon
-int main() {
-    ifstream fin("../sampleFiles/metadata.csv");
-    if (!fin.is_open()) return cerr << "metadata.csv not found\n", 1;
-
-    string header;
-    if (!getline(fin, header)) return cerr << "empty metadata.csv\n", 1;
-
-    auto head = parse_csv(header);
-    int title_col = -1, authors_col = -1, abs_col = -1;
-
-    // Detect required column positions
-    for (size_t i = 0; i < head.size(); i++) {
-        string h = head[i]; for (auto &ch : h) ch = tolower(ch);
-        if (h == "title") title_col = i;
-        if (h == "authors") authors_col = i;
-        if (h == "abstract") abs_col = i;
+int main(int argc, char** argv) {
+    if (argc < 2) {
+        std::cerr << "Usage: lexicon <SEGMENT_DIR>\n";
+        return 1;
     }
 
-    if (title_col == -1 && abs_col == -1) return cerr << "no title or abstract column found\n", 1;
+    fs::path seg = fs::path(argv[1]);
+    fs::path fwd_path  = seg / "forward.bin";
+    fs::path term_path = seg / "terms.bin";     // created by forwardindex.cpp
 
-    DocID doc_id = 1;
-    string line;
-
-    // Read CSV rows and index documents
-    while (getline(fin, line)) {
-        if (line.empty()) continue;
-        auto cols = parse_csv(line);
-
-        int max_needed = max(title_col, abs_col);
-        if (authors_col != -1) max_needed = max(max_needed, authors_col);
-        if ((int)cols.size() <= max_needed) continue;
-
-        string title = (title_col != -1 ? cols[title_col] : "");
-        string authors = (authors_col != -1 ? cols[authors_col] : "");
-        string abstract = (abs_col != -1 ? cols[abs_col] : "");
-
-        if (title.empty() && abstract.empty()) { doc_id++; continue; }
-
-        string text = title + " " + authors + " " + abstract;
-        index_doc(doc_id, text);
-        doc_id++;
+    if (!fs::exists(fwd_path) || !fs::exists(term_path)) {
+        std::cerr << "Missing forward.bin or terms.bin in: " << seg << "\n";
+        return 1;
     }
 
-    // Write final lexicon to file
-    ofstream fout("../sampleFiles/lexicon.txt");
-    if (!fout.is_open()) return cerr << "cannot write lexicon.txt\n", 1;
+    // Load terms list: termId -> term
+    std::vector<std::string> terms;
+    {
+        std::ifstream in(term_path, std::ios::binary);
+        if (!in) {
+            std::cerr << "Failed to open: " << term_path << "\n";
+            return 1;
+        }
+        uint32_t n = read_u32(in);
+        terms.resize(n);
+        for (uint32_t i=0;i<n;i++) terms[i] = read_string(in);
+    }
 
-    for (auto &p : lexicon)
-        fout << p.first << " " << p.second.term_id << " " << p.second.doc_freq << "\n";
+    // Read forward index, build inverted postings
+    std::vector<std::vector<Posting>> inverted(terms.size());
 
+    {
+        std::ifstream in(fwd_path, std::ios::binary);
+        if (!in) {
+            std::cerr << "Failed to open: " << fwd_path << "\n";
+            return 1;
+        }
+
+        uint32_t numDocs = read_u32(in);
+
+        for (uint32_t docId=0; docId<numDocs; docId++) {
+            uint32_t cnt = read_u32(in);
+            for (uint32_t i=0;i<cnt;i++) {
+                uint32_t termId = read_u32(in);
+                uint32_t tf     = read_u32(in);
+                if (termId >= inverted.size()) continue;
+                inverted[termId].push_back(Posting{docId, tf});
+            }
+        }
+    }
+
+    // Write BARRELIZED inverted + lexicon.
+    // Per-barrel lexicon entry format:
+    //   term(string), termId(u32), df(u32), offset(u64), count(u32)
+    {
+        BarrelParams bp;
+        bp.barrel_count = BARREL_COUNT;
+        uint32_t tcount = (uint32_t)terms.size();
+        bp.terms_per_barrel = (tcount + bp.barrel_count - 1) / bp.barrel_count;
+        if (bp.terms_per_barrel == 0) bp.terms_per_barrel = 1;
+
+        write_barrels_manifest(seg, bp);
+
+        std::vector<std::ofstream> inv(bp.barrel_count);
+        std::vector<std::ofstream> lex(bp.barrel_count);
+        std::vector<uint64_t> offsets(bp.barrel_count, 0);
+        std::vector<uint32_t> barrel_term_counts(bp.barrel_count, 0);
+
+        for (uint32_t b=0; b<bp.barrel_count; b++) {
+            inv[b].open(inv_barrel_path(seg, b), std::ios::binary);
+            lex[b].open(lex_barrel_path(seg, b), std::ios::binary);
+            if (!inv[b] || !lex[b]) {
+                std::cerr << "Failed to open barrel files in: " << seg << "\n";
+                return 1;
+            }
+            write_u32(lex[b], 0); // placeholder for number of lex entries in this barrel
+        }
+
+        for (uint32_t tid=0; tid<tcount; tid++) {
+            auto& plist = inverted[tid];
+            if (plist.empty()) continue;
+
+            std::sort(plist.begin(), plist.end(),
+                      [](const Posting& a, const Posting& b){ return a.docId < b.docId; });
+
+            uint32_t df = (uint32_t)plist.size();
+            uint32_t b  = barrel_for_term(tid, bp);
+
+            barrel_term_counts[b]++;
+
+            write_string(lex[b], terms[tid]);
+            write_u32(lex[b], tid);
+            write_u32(lex[b], df);
+            write_u64(lex[b], offsets[b]);
+            write_u32(lex[b], df);
+
+            for (auto& p : plist) {
+                write_u32(inv[b], p.docId);
+                write_u32(inv[b], p.tf);
+            }
+            offsets[b] += (uint64_t)df * (sizeof(uint32_t) * 2);
+        }
+
+        // Patch barrel term counts at start of each lexicon_bXXX.bin
+        for (uint32_t b=0; b<bp.barrel_count; b++) {
+            lex[b].flush();
+            lex[b].close();
+
+            std::ofstream patch(
+                lex_barrel_path(seg, b),
+                std::ios::in | std::ios::out | std::ios::binary
+            );
+            if (!patch) {
+                std::cerr << "Failed to patch lexicon barrel: " << lex_barrel_path(seg, b) << "\n";
+                return 1;
+            }
+            patch.seekp(0, std::ios::beg);
+            write_u32(patch, barrel_term_counts[b]);
+            patch.flush();
+        }
+    }
+
+    std::cerr << "Built BARRELIZED lexicon+inverted in: " << seg << "\n";
     return 0;
 }

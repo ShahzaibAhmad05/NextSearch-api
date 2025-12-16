@@ -1,170 +1,196 @@
-#include <iostream>
+#include <filesystem>
 #include <fstream>
-#include <sstream>
-#include <string>
+#include <iostream>
 #include <unordered_map>
 #include <vector>
-#include <cctype>
-#include <cstdint>
+#include <algorithm>
 
-using namespace std;
-using DocID = string;          // Use cord_uid string as document ID
-using TermID = uint32_t;       // Numeric term ID as before
+#include "cordjson.hpp"
+#include "textutil.hpp"
+#include "indexio.hpp"
 
-struct TermOcc {
-    TermID tid;
-    vector<uint32_t> pos;
+namespace fs = std::filesystem;
+
+struct DocInfo {
+    std::string cord_uid;
+    std::string title;
+    std::string json_relpath;
+    uint32_t doc_len;
 };
 
-// Lexicon mapping term string → term ID, and forward index mapping docID(cord_uid) → list of term occurrences
-unordered_map<string, TermID> term_to_id;
-unordered_map<DocID, vector<TermOcc>> forward_index;
-
-// CSV parser that handles quoted fields and commas inside quotes
-vector<string> parse_csv(const string& line) {
-    vector<string> cols;
-    string cur;
-    bool inq = false;
-    for (size_t i = 0; i < line.size(); i++) {
-        char c = line[i];
-        if (c == '"') {
-            if (inq && i + 1 < line.size() && line[i + 1] == '"') {
-                cur.push_back('"');
-                i++;
-            } else inq = !inq;
-        }
-        else if (c == ',' && !inq) {
-            cols.push_back(cur);
-            cur.clear();
-        }
+static std::vector<std::string> split_csv_line(const std::string& line) {
+    std::vector<std::string> cols;
+    std::string cur;
+    bool in_quotes = false;
+    for (char c : line) {
+        if (c == '"') in_quotes = !in_quotes;
+        else if (c == ',' && !in_quotes) { cols.push_back(cur); cur.clear(); }
         else cur.push_back(c);
     }
     cols.push_back(cur);
     return cols;
 }
 
-// Tokenizer that lowercases text and keeps only alphabetic characters and spaces
-vector<string> tokenize(const string& s) {
-    string cleaned;
-    cleaned.reserve(s.size());
-    for (char c : s) {
-        if (isalpha((unsigned char)c) || isspace((unsigned char)c))
-            cleaned.push_back(tolower((unsigned char)c));
-        else
-            cleaned.push_back(' ');
-    }
-    stringstream ss(cleaned);
-    string tok;
-    vector<string> out;
-    while (ss >> tok) out.push_back(tok);
-    return out;
+static std::string pick_first_path(const std::string& s) {
+    size_t pos = s.find(';');
+    std::string first = (pos == std::string::npos) ? s : s.substr(0, pos);
+    while (!first.empty() && (first.back()==' ' || first.back()=='\r')) first.pop_back();
+    while (!first.empty() && first.front()==' ') first.erase(first.begin());
+    return first;
 }
 
-// Main: load lexicon, read metadata, build forward index keyed by cord_uid, and write forward_index.txt
-int main() {
-    // Load lexicon.txt into term_to_id map
+int main(int argc, char** argv) {
+    if (argc < 3) {     // enforce cli args are provided correctly
+        std::cerr << "Usage: forwardindex <CORD_ROOT> <SEGMENT_DIR>\n";
+        return 1;
+    }
+
+    fs::path root = fs::path(argv[1]);
+    fs::path seg  = fs::path(argv[2]);
+    fs::create_directories(seg);
+
+    fs::path meta = root / "metadata.csv";
+    if (!fs::exists(meta)) {        // verify metadata exists
+        std::cerr << "metadata.csv not found: " << meta << "\n";
+        return 1;
+    }
+
+    std::ifstream in(meta);
+    std::string header;
+    std::getline(in, header);
+
+    auto header_cols = split_csv_line(header);
+    auto idx_of = [&](const std::string& name)->int{
+        for (int i=0;i<(int)header_cols.size();i++) if (header_cols[i]==name) return i;
+        return -1;
+    };
+
+    int i_uid   = idx_of("cord_uid");
+    int i_title = idx_of("title");
+    int i_pdf   = idx_of("pdf_json_files");
+    int i_pmc   = idx_of("pmc_json_files");
+
+    if (i_uid<0 || i_title<0 || i_pdf<0 || i_pmc<0) {
+        std::cerr << "metadata.csv missing required columns.\n";
+        return 1;
+    }
+
+    // term -> termId
+    std::unordered_map<std::string, uint32_t> term_to_id;
+    term_to_id.reserve(400000);
+    std::vector<std::string> id_to_term;
+
+    std::vector<DocInfo> docs;
+    std::vector<std::vector<std::pair<uint32_t,uint32_t>>> forward; // doc -> (termId, tf)
+    uint64_t total_len = 0;
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        auto cols = split_csv_line(line);
+        if ((int)cols.size() <= std::max({i_uid,i_title,i_pdf,i_pmc})) continue;
+
+        std::string cord_uid = cols[i_uid];
+        std::string title    = cols[i_title];
+
+        std::string pmc_rel = pick_first_path(cols[i_pmc]);
+        std::string pdf_rel = pick_first_path(cols[i_pdf]);
+        std::string rel = !pmc_rel.empty() ? pmc_rel : pdf_rel;
+        if (rel.empty()) continue;
+
+        fs::path json_path = root / fs::path(rel);
+        if (!fs::exists(json_path)) continue;
+
+        std::string raw = read_file_all(json_path);
+        if (raw.empty()) continue;
+
+        json j;
+        try { j = json::parse(raw); } catch(...) { continue; }
+
+        std::string text = extract_text_from_cord_json(j);
+        if (text.empty()) continue;
+
+        auto toks = tokenize(text);
+
+        std::unordered_map<std::string, uint32_t> tf;
+        tf.reserve(toks.size()/2 + 8);
+
+        uint32_t doc_len = 0;
+        for (auto& t : toks) {
+            if (t.size() < 2) continue;
+            if (is_stopword(t)) continue;
+            tf[t] += 1;
+            doc_len += 1;
+        }
+        if (doc_len == 0) continue;
+
+        uint32_t docId = (uint32_t)docs.size();
+        docs.push_back(DocInfo{cord_uid, title, rel, doc_len});
+        total_len += doc_len;
+
+        std::vector<std::pair<uint32_t,uint32_t>> postings;
+        postings.reserve(tf.size());
+
+        for (auto& kv : tf) {
+            auto it = term_to_id.find(kv.first);
+            uint32_t tid;
+            if (it == term_to_id.end()) {
+                tid = (uint32_t)id_to_term.size();
+                term_to_id.emplace(kv.first, tid);
+                id_to_term.push_back(kv.first);
+            } else tid = it->second;
+
+            postings.push_back({tid, kv.second});
+        }
+
+        std::sort(postings.begin(), postings.end());
+        forward.push_back(std::move(postings));
+
+        if (docId % 1000 == 0) std::cerr << "Docs: " << docId << "\n";
+    }
+
+    float avgdl = docs.empty() ? 0.0f : (float)total_len / (float)docs.size();
+
+    // Write docs.bin
     {
-        ifstream lx("../sampleFiles/lexicon.txt");
-        if (!lx.is_open()) {
-            cerr << "lexicon.txt not found\n";
-            return 1;
+        std::ofstream out(seg / "docs.bin", std::ios::binary);
+        write_u32(out, (uint32_t)docs.size());
+        for (auto& d : docs) {
+            write_string(out, d.cord_uid);
+            write_string(out, d.title);
+            write_string(out, d.json_relpath);
+            write_u32(out, d.doc_len);
         }
-        string term;
-        TermID tid;
-        uint32_t df;
-        while (lx >> term >> tid >> df)
-            term_to_id[term] = tid;
     }
 
-    // Open metadata.csv for reading
-    ifstream fin("../sampleFiles/metadata.csv");
-    if (!fin.is_open()) {
-        cerr << "metadata.csv not found\n";
-        return 1;
+    // Write stats.bin
+    {
+        std::ofstream out(seg / "stats.bin", std::ios::binary);
+        write_u32(out, (uint32_t)docs.size());
+        write_f32(out, avgdl);
     }
 
-    // Read and parse header to locate column indices (title, authors, abstract, cord_uid)
-    string header;
-    getline(fin, header);
-    auto head = parse_csv(header);
-
-    int title_col = -1, authors_col = -1, abs_col = -1, cord_col = -1;
-
-    for (size_t i = 0; i < head.size(); i++) {
-        string h = head[i];
-        for (char &c : h) c = tolower(c);
-        if (h == "title")    title_col = (int)i;
-        if (h == "authors")  authors_col = (int)i;
-        if (h == "abstract") abs_col = (int)i;
-        if (h == "cord_uid") cord_col = (int)i;
-    }
-
-    // Ensure required columns exist (title, abstract, cord_uid)
-    if (title_col == -1 || abs_col == -1 || cord_col == -1) {
-        cerr << "title/abstract/cord_uid column missing\n";
-        return 1;
-    }
-
-    // Process each data row and build per-document term positions
-    string line;
-    while (getline(fin, line)) {
-        auto cols = parse_csv(line);
-
-        // Basic safety: ensure we have at least up to cord_uid, title, abstract
-        if (cols.size() <= (size_t)abs_col ||
-            cols.size() <= (size_t)title_col ||
-            cols.size() <= (size_t)cord_col)
-            continue;
-
-        string cord_uid = cols[cord_col];
-        if (cord_uid.empty()) continue;
-
-        string title    = cols[title_col];
-        string authors  = (authors_col != -1 && cols.size() > (size_t)authors_col ? cols[authors_col] : "");
-        string abstract = cols[abs_col];
-
-        string text = title + " " + authors + " " + abstract;
-        auto tokens = tokenize(text);
-
-        unordered_map<TermID, vector<uint32_t>> mp;  // Map termID → positions in this doc
-
-        for (uint32_t i = 0; i < tokens.size(); i++) {
-            auto it = term_to_id.find(tokens[i]);
-            if (it != term_to_id.end())
-                mp[it->second].push_back(i);
-        }
-
-        vector<TermOcc> v;
-        v.reserve(mp.size());
-        for (auto &p : mp)
-            v.push_back({ p.first, p.second });
-
-        forward_index[cord_uid] = v;  // Use cord_uid as the document ID key
-    }
-
-    // Write forward_index.txt using cord_uid as document identifier
-    ofstream fout("../sampleFiles/forward_index.txt");
-    if (!fout.is_open()) {
-        cerr << "cannot write forward_index.txt\n";
-        return 1;
-    }
-
-    for (auto &entry : forward_index) {
-        const DocID &doc_id = entry.first;        
-        auto &terms = entry.second;
-        if (terms.empty()) continue;
-
-        fout << doc_id << " " << terms.size() << " ";
-        for (size_t i = 0; i < terms.size(); i++) {
-            fout << terms[i].tid << ":";
-            for (size_t j = 0; j < terms[i].pos.size(); j++) {
-                fout << terms[i].pos[j];
-                if (j + 1 < terms[i].pos.size()) fout << ",";
+    // Write forward.bin
+    {
+        std::ofstream out(seg / "forward.bin", std::ios::binary);
+        write_u32(out, (uint32_t)forward.size());
+        for (auto& vec : forward) {
+            write_u32(out, (uint32_t)vec.size());
+            for (auto& [tid, tfv] : vec) {
+                write_u32(out, tid);
+                write_u32(out, tfv);
             }
-            if (i + 1 < terms.size()) fout << ";";
         }
-        fout << "\n";
     }
 
+    // Write terms.bin (termId -> term string)
+    {
+        std::ofstream out(seg / "terms.bin", std::ios::binary);
+        write_u32(out, (uint32_t)id_to_term.size());
+        for (auto& t : id_to_term) write_string(out, t);
+    }
+
+    std::cerr << "Wrote forward+terms+docs+stats to segment: " << seg << "\n";
+    std::cerr << "Now run: lexicon.exe " << seg << "\n";
     return 0;
 }
