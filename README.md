@@ -12,10 +12,16 @@ This project demonstrates core indexing concepts used in modern search engines.
 NextSearch
 ├─ backend/
 │  ├─ AddDocument.cpp
+│  ├─ api_server.cpp
+│  ├─ barrels.hpp
+│  ├─ CMakeLists.txt
+│  ├─ cordjson.hpp
 │  ├─ ForwardIndex.cpp
-│  ├─ ImplementBarrels.cpp
-│  ├─ InvertedIndex.cpp
-│  └─ lexicon.cpp
+│  ├─ indexio.hpp
+│  ├─ lexicon.cpp
+│  ├─ README.md
+│  ├─ segment_writer.hpp
+│  └─ textutil.hpp
 ├─ frontend/
 │  ├─ public/
 │  │  └─ vite.svg
@@ -23,6 +29,7 @@ NextSearch
 │  │  ├─ assets/
 │  │  │  └─ react.svg
 │  │  ├─ components/
+│  │  │  ├─ AddDocumentModal.tsx
 │  │  │  ├─ SearchBar.tsx
 │  │  │  └─ SearchResults.tsx
 │  │  ├─ api.ts
@@ -30,7 +37,8 @@ NextSearch
 │  │  ├─ App.tsx
 │  │  ├─ index.css
 │  │  ├─ main.tsx
-│  │  └─ types.ts
+│  │  ├─ types.ts
+│  │  └─ vite-env.d.ts
 │  ├─ eslint.config.js
 │  ├─ index.html
 │  ├─ package-lock.json
@@ -40,54 +48,29 @@ NextSearch
 │  ├─ tsconfig.json
 │  ├─ tsconfig.node.json
 │  └─ vite.config.ts
-├─ sampleFiles/
-│  ├─ forward_index.txt
-│  ├─ inverted_index.txt
-│  ├─ lexicon.txt
-│  ├─ metadata.csv
-│  ├─ metadata_old.csv
-│  ├─ metadata_slice.csv
-│  └─ sliceMetadata.py
+├─ helper_scripts/
+│  └─ slice_cord19.py
 ├─ LICENSE
 └─ README.md
 ````
 
-## **Features**
-
-* **Tokenization & Normalization**
-  * Converts text to lowercase  
-  * Removes punctuation  
-  * Splits into valid terms
-
-* **Lexicon Generation**
-  * Builds a vocabulary of unique terms  
-  * Assigns each term a unique **TermID**  
-  * Stores document frequency  
-  * Output: `lexicon.txt`
-
-* **Forward Index**
-  * Maps **document → terms + their positions**  
-  * Reads metadata (title, authors, abstract)  
-  * Stores positional information  
-  * Output: `forward_index.txt`
-
-* **Inverted Index**
-  * Maps **term → documents containing that term + positions**  
-  * Sorts posting lists by document ID  
-  * Output: `inverted_index.txt`
-
 ---
 
-## **Usage**
-### 1. Get the Dataset from this link: https://drive.google.com/file/d/1H18OZBl-stVZPLrLjePSApjCixUdiEQE/view?usp=sharing
+## Usage
 
-Use `g++` (or any C++ compiler):
+Get a subset of the Cord19 Dataset from [here](https://drive.google.com/file/d/13TQhCDnkPcsjJbZFkgEHuaV50UPCIZKb/view?usp=drive_link)
 
-### 2. Compile the Code
+- Place the dataset in a known directory, for example, D:/cord_19/
 
-Use `g++` (or any C++ compiler):
+- Build backend using cmake:
 
-```bash
-g++ lexicon.cpp -o lexicon
-g++ forward_index.cpp -o forward_index
-g++ inverted_index.cpp -o inverted_index
+````
+cmake -S . -B build
+cmake --build build
+````
+
+- Run `forwardindex.exe` to create forward index.
+
+- Run `lexicon.exe` to create inverted index, and lexicon.
+
+- Run `api_server.exe` to run the backend API locally.
