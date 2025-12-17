@@ -181,8 +181,16 @@ static std::vector<std::string> csv_row(const std::string& line) {
     return out;
 }
 
-static void load_metadata_uid_url(const fs::path& metadata_csv,
-                                  std::unordered_map<std::string,std::string>& uid_to_url) {
+// NEW: store both url and publish_time per cord_uid
+struct MetaInfo {
+    std::string url;
+    std::string publish_time; // "YYYY-MM-DD" string
+};
+
+static void load_metadata_uid_meta(
+    const fs::path& metadata_csv,
+    std::unordered_map<std::string, MetaInfo>& uid_to_meta
+) {
     std::ifstream in(metadata_csv);
     if (!in) {
         std::cerr << "[metadata] FAILED open: " << metadata_csv.string() << "\n";
@@ -196,16 +204,19 @@ static void load_metadata_uid_url(const fs::path& metadata_csv,
     }
 
     auto cols = csv_row(header);
-    int uid_i = -1, url_i = -1;
+    int uid_i = -1, url_i = -1, pub_i = -1;
     for (int i=0;i<(int)cols.size();i++) {
         if (cols[i] == "cord_uid") uid_i = i;
         if (cols[i] == "url") url_i = i;
+        if (cols[i] == "publish_time") pub_i = i;
     }
 
     std::cerr << "[metadata] columns=" << cols.size()
-              << " uid_i=" << uid_i << " url_i=" << url_i << "\n";
+              << " uid_i=" << uid_i
+              << " url_i=" << url_i
+              << " pub_i=" << pub_i << "\n";
 
-    if (uid_i < 0 || url_i < 0) {
+    if (uid_i < 0 || url_i < 0 || pub_i < 0) {
         std::cerr << "[metadata] missing required columns in header\n";
         return;
     }
@@ -214,17 +225,24 @@ static void load_metadata_uid_url(const fs::path& metadata_csv,
     size_t loaded = 0, bad = 0;
     while (std::getline(in, line)) {
         auto r = csv_row(line);
-        if ((int)r.size() <= std::max(uid_i, url_i)) { bad++; continue; }
+        if ((int)r.size() <= std::max({uid_i, url_i, pub_i})) { bad++; continue; }
+
         auto uid = r[uid_i];
         auto url = r[url_i];
-        if (!uid.empty() && !url.empty()) {
-            uid_to_url[uid] = url;
-            loaded++;
-        }
+        auto pub = r[pub_i];
+
+        if (uid.empty()) continue;
+
+        // CORD-19 may contain multiple rows per uid; keep first non-empty values
+        auto& entry = uid_to_meta[uid];
+        if (entry.url.empty() && !url.empty()) entry.url = url;
+        if (entry.publish_time.empty() && !pub.empty()) entry.publish_time = pub;
+
+        loaded++;
     }
 
     std::cerr << "[metadata] loaded=" << loaded << " bad_rows=" << bad
-              << " map_size=" << uid_to_url.size() << "\n";
+              << " map_size=" << uid_to_meta.size() << "\n";
 }
 
 static void write_barrelized_index_files_single_doc(
@@ -295,11 +313,14 @@ struct Engine {
     fs::path index_dir;
     std::vector<std::string> seg_names;
     std::vector<Segment> segments;
-    std::unordered_map<std::string, std::string> uid_to_url;
+
+    // CHANGED: store both url and publish_time
+    std::unordered_map<std::string, MetaInfo> uid_to_meta;
+
     std::mutex mtx;
 
     bool reload() {
-        std::cerr << "[reload] metadata map size: " << uid_to_url.size() << "\n";
+        std::cerr << "[reload] metadata map size: " << uid_to_meta.size() << "\n";
         std::lock_guard<std::mutex> lock(mtx);
 
         seg_names = load_manifest(index_dir / "manifest.bin");
@@ -332,9 +353,11 @@ struct Engine {
         }
 
         segments = std::move(loaded);
-        // reload metadata -> uid_to_url
-        uid_to_url.clear();
-        load_metadata_uid_url(index_dir / "metadata.csv", uid_to_url);
+
+        // reload metadata -> uid_to_meta
+        uid_to_meta.clear();
+        load_metadata_uid_meta(index_dir / "metadata.csv", uid_to_meta);
+
         return true;
     }
 
@@ -419,13 +442,19 @@ struct Engine {
             r["title"] = d.title;
             r["json_relpath"] = d.json_relpath;
 
-            auto it = uid_to_url.find(d.cord_uid);
-            if (it != uid_to_url.end()) {
+            auto it = uid_to_meta.find(d.cord_uid);
+            if (it != uid_to_meta.end()) {
                 // metadata.csv sometimes has multiple URLs separated by ';'
-                std::string url = it->second;
+                std::string url = it->second.url;
                 auto semi = url.find(';');
                 if (semi != std::string::npos) url = url.substr(0, semi);
-                r["url"] = url;
+                if (!url.empty()) r["url"] = url;
+
+                if (!it->second.publish_time.empty()) {
+                    // choose your preferred key name:
+                    r["publish_time"] = it->second.publish_time;
+                    // r["publish_date"] = it->second.publish_time;
+                }
             }
 
             out["results"].push_back(r);

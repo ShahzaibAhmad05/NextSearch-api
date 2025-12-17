@@ -37,7 +37,9 @@ export default function SearchResults({ results }: Props) {
                   )}
                 </div>
 
-                <br />
+                <div className="small text-secondary mt-1">
+                  Published: {r.publish_time ?? "—"}
+                </div>
 
                 {/* View Article button */}
                 {r.url && (

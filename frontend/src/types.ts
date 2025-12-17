@@ -7,6 +7,7 @@ export type SearchResult = {
   cord_uid: string;
   json_relpath: string;
   url?: string;
+  publish_time?: string;
 };
 
 export type SearchResponse = {
