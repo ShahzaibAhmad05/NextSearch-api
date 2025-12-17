@@ -5,16 +5,25 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # executables
-add_executable(forwardindex   forwardindex.cpp)
+# NOTE: Some source files in this repo use capitalized filenames.
+add_executable(forwardindex   ForwardIndex.cpp)
 add_executable(lexicon        lexicon.cpp)
-add_executable(adddocument    adddocument.cpp)
-add_executable(api_server     api_server.cpp)
+add_executable(adddocument    AddDocument.cpp)
 
-# includes 
+add_executable(api_server
+  api/api_server.cpp
+  api/api_engine.cpp
+  api/api_segment.cpp
+  api/api_metadata.cpp
+  api/api_http.cpp
+  api/api_add_document.cpp
+)
+
+# includes
 target_include_directories(forwardindex  PRIVATE .)
 target_include_directories(lexicon       PRIVATE .)
 target_include_directories(adddocument   PRIVATE .)
-target_include_directories(api_server    PRIVATE .)
+target_include_directories(api_server    PRIVATE . api)
 
 # Windows fixes for cpp-httplib and Winsock linking
 if (WIN32)
