@@ -6,7 +6,16 @@ import AddDocumentModal from "./components/AddDocumentModal";
 import { search as apiSearch } from "./api";
 import type { SearchResult } from "./types";
 
-type SortBy = "Relevancy" | "Score (High)" | "Score (Low)";
+type SortBy =
+  | "Relevancy"
+  | "Publish Date (Newest)"
+  | "Publish Date (Oldest)";
+
+function publishTimeToMs(iso?: string) {
+  if (!iso) return NaN;
+  const t = Date.parse(iso); // expects "YYYY-MM-DD"
+  return Number.isNaN(t) ? NaN : t;
+}
 
 export default function App() {
   const [query, setQuery] = useState("");
@@ -21,8 +30,7 @@ export default function App() {
 
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // UI-only controls (to match the “ideal” layout)
-  const [aiSummaryOn, setAiSummaryOn] = useState(false);
+  // UI-only controls
   const [sortBy, setSortBy] = useState<SortBy>("Relevancy");
   const [showSort, setShowSort] = useState(false);
 
@@ -56,17 +64,34 @@ export default function App() {
     if (error) return "Error fetching results";
     if (results.length === 0) return "No results found";
 
-    const parts: string[] = [`Found ${results.length} result${results.length === 1 ? "" : "s"}`];
-    // if (backendSearchMs != null) parts.push(`in ${backendSearchMs.toFixed(2)} ms`);
-    if (backendTotalMs != null) parts.push(`in ${backendTotalMs.toFixed(2)} ms`);
+    const parts: string[] = [
+      `Found ${results.length} result${results.length === 1 ? "" : "s"}`,
+    ];
+    if (backendTotalMs != null)
+      parts.push(`in ${backendTotalMs.toFixed(2)} ms`);
     return parts.join(" ");
-  }, [hasSearched, loading, error, results.length, backendSearchMs, backendTotalMs]);
+  }, [hasSearched, loading, error, results.length, backendTotalMs]);
 
   const sortedResults = useMemo(() => {
     const copy = [...results];
-    if (sortBy === "Score (High)") copy.sort((a, b) => b.score - a.score);
-    if (sortBy === "Score (Low)") copy.sort((a, b) => a.score - b.score);
-    // Relevancy: keep backend order
+
+    if (sortBy === "Publish Date (Newest)" || sortBy === "Publish Date (Oldest)") {
+      copy.sort((a, b) => {
+        const ta = publishTimeToMs(a.publish_time);
+        const tb = publishTimeToMs(b.publish_time);
+
+        // Missing/invalid dates go last
+        const aBad = Number.isNaN(ta);
+        const bBad = Number.isNaN(tb);
+        if (aBad && bBad) return 0;
+        if (aBad) return 1;
+        if (bBad) return -1;
+
+        return sortBy === "Publish Date (Newest)" ? tb - ta : ta - tb;
+      });
+    }
+
+    // Relevancy = backend order (BM25 score)
     return copy;
   }, [results, sortBy]);
 
@@ -76,10 +101,13 @@ export default function App() {
       <nav className="navbar navbar-expand-lg bg-white border-bottom fixed-top">
         <div className="container" style={{ maxWidth: 980 }}>
           <a className="navbar-brand fw-bold" href="#">
-            
+            {/* brand */}
           </a>
           <div className="d-flex gap-2">
-            <button className="btn btn-outline-dark" onClick={() => setShowAddModal(true)}>
+            <button
+              className="btn btn-outline-dark"
+              onClick={() => setShowAddModal(true)}
+            >
               Add Document
             </button>
           </div>
@@ -98,10 +126,7 @@ export default function App() {
           </div>
 
           {/* search area */}
-          <div
-            className="bg-light py-3"
-            style={{ top: 72, zIndex: 1020 }}
-          >
+          <div className="bg-light py-3" style={{ top: 72, zIndex: 1020 }}>
             <div className="card shadow-sm">
               <div className="card-body">
                 <SearchBar
@@ -113,10 +138,11 @@ export default function App() {
                   onSubmit={onSubmit}
                 />
 
-                {status ? <div className="mt-2 small text-secondary">{status}</div> : null}
+                {status ? (
+                  <div className="mt-2 small text-secondary">{status}</div>
+                ) : null}
 
                 <div className="mt-3 d-flex flex-wrap gap-2 align-items-center">
-
                   {/* Sort dropdown */}
                   <div className="position-relative">
                     <button
@@ -128,11 +154,22 @@ export default function App() {
                     </button>
 
                     {showSort ? (
-                      <div className="dropdown-menu show" style={{ position: "absolute" }}>
-                        {(["Relevancy", "Score (High)", "Score (Low)"] as SortBy[]).map((opt) => (
+                      <div
+                        className="dropdown-menu show"
+                        style={{ position: "absolute" }}
+                      >
+                        {(
+                          [
+                            "Relevancy",
+                            "Publish Date (Newest)",
+                            "Publish Date (Oldest)",
+                          ] as SortBy[]
+                        ).map((opt) => (
                           <button
                             key={opt}
-                            className={`dropdown-item ${opt === sortBy ? "active" : ""}`}
+                            className={`dropdown-item ${
+                              opt === sortBy ? "active" : ""
+                            }`}
                             onClick={() => {
                               setSortBy(opt);
                               setShowSort(false);
@@ -151,7 +188,8 @@ export default function App() {
                   <div className="alert alert-danger mt-3 mb-0">
                     <div className="fw-semibold">{error}</div>
                     <div className="small mt-2">
-                      Make sure backend is running: <code>./api_server &lt;INDEX_DIR&gt; 8080</code>
+                      Make sure backend is running:{" "}
+                      <code>./api_server &lt;INDEX_DIR&gt; 8080</code>
                     </div>
                   </div>
                 ) : null}
@@ -164,7 +202,10 @@ export default function App() {
         </div>
       </div>
 
-      <AddDocumentModal show={showAddModal} onClose={() => setShowAddModal(false)} />
+      <AddDocumentModal
+        show={showAddModal}
+        onClose={() => setShowAddModal(false)}
+      />
     </div>
   );
 }
