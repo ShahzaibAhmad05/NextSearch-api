@@ -16,8 +16,8 @@ code {
 }
 
 .form-control:focus {
-  border-color: #1f55ca;                 /* darker border */
-  box-shadow: 0 0 0 0.1rem rgba(63, 121, 203, 0.667); /* thinner focus ring */
+  /* border-color: #1f55ca;                 darker border */
+  box-shadow: 0 0 0 0.1rem rgba(17, 97, 207, 0.886); /* thinner focus ring */
 }
 
 /* -----------------------------

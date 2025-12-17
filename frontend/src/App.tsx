@@ -13,7 +13,7 @@ type SortBy =
 
 function publishTimeToMs(iso?: string) {
   if (!iso) return NaN;
-  const t = Date.parse(iso); // expects "YYYY-MM-DD"
+  const t = Date.parse(iso);
   return Number.isNaN(t) ? NaN : t;
 }
 
@@ -24,13 +24,11 @@ export default function App() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const [backendSearchMs, setBackendSearchMs] = useState<number | null>(null);
   const [backendTotalMs, setBackendTotalMs] = useState<number | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // UI-only controls
   const [sortBy, setSortBy] = useState<SortBy>("Relevancy");
   const [showSort, setShowSort] = useState(false);
 
@@ -44,14 +42,11 @@ export default function App() {
       const data = await apiSearch(query, k);
       setResults(data.results);
       setHasSearched(true);
-
-      setBackendSearchMs(data.search_time_ms ?? null);
       setBackendTotalMs(data.total_time_ms ?? null);
     } catch (e: any) {
       setError(e?.message ?? String(e));
       setResults([]);
       setHasSearched(true);
-      setBackendSearchMs(null);
       setBackendTotalMs(null);
     } finally {
       setLoading(false);
@@ -75,12 +70,11 @@ export default function App() {
   const sortedResults = useMemo(() => {
     const copy = [...results];
 
-    if (sortBy === "Publish Date (Newest)" || sortBy === "Publish Date (Oldest)") {
+    if (sortBy !== "Relevancy") {
       copy.sort((a, b) => {
         const ta = publishTimeToMs(a.publish_time);
         const tb = publishTimeToMs(b.publish_time);
 
-        // Missing/invalid dates go last
         const aBad = Number.isNaN(ta);
         const bBad = Number.isNaN(tb);
         if (aBad && bBad) return 0;
@@ -91,7 +85,6 @@ export default function App() {
       });
     }
 
-    // Relevancy = backend order (BM25 score)
     return copy;
   }, [results, sortBy]);
 
@@ -101,7 +94,6 @@ export default function App() {
       <nav className="navbar navbar-expand-lg bg-white border-bottom fixed-top">
         <div className="container" style={{ maxWidth: 980 }}>
           <a className="navbar-brand fw-bold" href="#">
-            {/* brand */}
           </a>
           <div className="d-flex gap-2">
             <button
@@ -114,93 +106,123 @@ export default function App() {
         </div>
       </nav>
 
-      {/* Page content */}
-      <div className="pt-5">
-        <div className="container pt-4" style={{ maxWidth: 980 }}>
-          {/* Hero */}
-          <div className="py-4">
-            <h1 className="display-5 fw-bold mb-2">NextSearch</h1>
-            <div className="text-secondary">
-              through 60k+ Cord19 research papers
-            </div>
-          </div>
-
-          {/* search area */}
-          <div className="bg-light py-3" style={{ top: 72, zIndex: 1020 }}>
-            <div className="card shadow-sm">
-              <div className="card-body">
-                <SearchBar
-                  query={query}
-                  k={k}
-                  loading={loading}
-                  onChangeQuery={setQuery}
-                  onChangeK={setK}
-                  onSubmit={onSubmit}
-                />
-
-                {status ? (
-                  <div className="mt-2 small text-secondary">{status}</div>
-                ) : null}
-
-                <div className="mt-3 d-flex flex-wrap gap-2 align-items-center">
-                  {/* Sort dropdown */}
-                  <div className="position-relative">
-                    <button
-                      className="btn btn-sm btn-outline-secondary dropdown-toggle"
-                      type="button"
-                      onClick={() => setShowSort((v) => !v)}
-                    >
-                      Sort by {sortBy}
-                    </button>
-
-                    {showSort ? (
-                      <div
-                        className="dropdown-menu show"
-                        style={{ position: "absolute" }}
-                      >
-                        {(
-                          [
-                            "Relevancy",
-                            "Publish Date (Newest)",
-                            "Publish Date (Oldest)",
-                          ] as SortBy[]
-                        ).map((opt) => (
-                          <button
-                            key={opt}
-                            className={`dropdown-item ${
-                              opt === sortBy ? "active" : ""
-                            }`}
-                            onClick={() => {
-                              setSortBy(opt);
-                              setShowSort(false);
-                            }}
-                            type="button"
-                          >
-                            {opt}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
-                {error ? (
-                  <div className="alert alert-danger mt-3 mb-0">
-                    <div className="fw-semibold">{error}</div>
-                    <div className="small mt-2">
-                      Make sure backend is running:{" "}
-                      <code>./api_server &lt;INDEX_DIR&gt; 8080</code>
-                    </div>
-                  </div>
-                ) : null}
+      {/* ======================
+          PRE-SEARCH (CENTERED)
+          ====================== */}
+      {!hasSearched && (
+        <div
+          className="d-flex align-items-center justify-content-center"
+          style={{ minHeight: "100vh" }}
+        >
+          <div className="container" style={{ maxWidth: 1000 }}>
+            <div className="text-center mb-4">
+              <h1 className="display-4 fw-bold mb-2">NextSearch</h1>
+              <div className="text-secondary">
+                through 60k+ Cord19 research papers
               </div>
             </div>
-          </div>
 
-          {/* Results */}
-          <SearchResults results={sortedResults} />
+            <div className="card-body">
+              <SearchBar
+                query={query}
+                k={k}
+                loading={loading}
+                onChangeQuery={setQuery}
+                onChangeK={setK}
+                onSubmit={onSubmit}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ======================
+          POST-SEARCH (NORMAL)
+          ====================== */}
+      {hasSearched && (
+        <div className="pt-5">
+          <div className="container pt-4" style={{ maxWidth: 980 }}>
+            {/* Hero */}
+            <div className="py-4">
+              <h1 className="display-5 fw-bold mb-2">NextSearch</h1>
+              <div className="text-secondary">
+                through 60k+ Cord19 research papers
+              </div>
+            </div>
+
+            {/* Search area */}
+            <div className="bg-light py-3">
+              <div className="card shadow-sm">
+                <div className="card-body">
+                  <SearchBar
+                    query={query}
+                    k={k}
+                    loading={loading}
+                    onChangeQuery={setQuery}
+                    onChangeK={setK}
+                    onSubmit={onSubmit}
+                  />
+
+                  {status && (
+                    <div className="mt-2 small text-secondary">{status}</div>
+                  )}
+
+                  <div className="mt-3 d-flex flex-wrap gap-2 align-items-center">
+                    {/* Sort dropdown */}
+                    <div className="position-relative">
+                      <button
+                        className="btn btn-sm btn-outline-secondary dropdown-toggle"
+                        type="button"
+                        onClick={() => setShowSort((v) => !v)}
+                      >
+                        Sort by {sortBy}
+                      </button>
+
+                      {showSort && (
+                        <div
+                          className="dropdown-menu show"
+                          style={{ position: "absolute" }}
+                        >
+                          {(
+                            [
+                              "Relevancy",
+                              "Publish Date (Newest)",
+                              "Publish Date (Oldest)",
+                            ] as SortBy[]
+                          ).map((opt) => (
+                            <button
+                              key={opt}
+                              className={`dropdown-item ${
+                                opt === sortBy ? "active" : ""
+                              }`}
+                              onClick={() => {
+                                setSortBy(opt);
+                                setShowSort(false);
+                              }}
+                              type="button"
+                            >
+                              {opt}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {error && (
+                    <div className="alert alert-danger mt-3 mb-0">
+                      <div className="fw-semibold">{error}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Results */}
+            <SearchResults results={sortedResults} />
+          </div>
+        </div>
+      )}
 
       <AddDocumentModal
         show={showAddModal}

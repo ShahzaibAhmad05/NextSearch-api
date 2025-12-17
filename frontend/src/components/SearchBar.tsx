@@ -17,6 +17,7 @@ export default function SearchBar({ query, k, loading, onChangeQuery, onChangeK,
         <div className="input-group" style={{ flex: "1 1 420px" }}>
         <input
           className="form-control form-control-lg"
+          style={{ padding: "0.9rem 1.25rem", borderRadius: "20px" }}
           value={query}
           onChange={(e) => onChangeQuery(e.target.value)}
           onKeyDown={(e) => {
