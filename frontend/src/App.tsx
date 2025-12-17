@@ -19,7 +19,7 @@ function publishTimeToMs(iso?: string) {
 
 export default function App() {
   const [query, setQuery] = useState("");
-  const [k, setK] = useState(25);
+  const [k, setK] = useState(100);
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
