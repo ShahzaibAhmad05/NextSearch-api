@@ -58,7 +58,7 @@ NextSearch
 
 ## Usage
 
-Get a subset of the Cord19 Dataset from [here](https://drive.google.com/file/d/13TQhCDnkPcsjJbZFkgEHuaV50UPCIZKb/view?usp=drive_link)
+Get a subset of the Cord19 Dataset from [here](https://drive.google.com/file/d/13TQhCDnkPcsjJbZFkgEHuaV50UPCIZKb/view?usp=drive_link).
 
 - Place the dataset in a known directory, for example, D:/cord_19/
 
