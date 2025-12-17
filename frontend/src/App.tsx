@@ -24,6 +24,7 @@ export default function App() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [found, setFound] = useState<number | undefined>();
 
   const [backendTotalMs, setBackendTotalMs] = useState<number | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -42,6 +43,7 @@ export default function App() {
     try {
       const data = await apiSearch(query, k);
       setResults(data.results);
+      setFound(data.found);
       setHasSearched(true);
       setBackendTotalMs(data.total_time_ms ?? null);
     } catch (e: any) {
@@ -59,10 +61,12 @@ export default function App() {
     if (loading) return "Searching…";
     if (error) return "Error fetching results";
     if (results.length === 0) return "No results found";
-
+    
+    const n = found ?? results.length;
     const parts: string[] = [
-      `Found ${results.length} result${results.length === 1 ? "" : "s"}`,
+      `Found ${n} result${n === 1 ? "" : "s"}`,
     ];
+
     if (backendTotalMs != null)
       parts.push(`in ${backendTotalMs.toFixed(2)} ms`);
     return parts.join(" ");

@@ -387,6 +387,7 @@ struct Engine {
         struct Hit { float s; uint32_t segId; uint32_t docId; };
         auto cmp = [](const Hit& a, const Hit& b){ return a.s > b.s; };
         std::priority_queue<Hit, std::vector<Hit>, decltype(cmp)> pq(cmp);
+        uint64_t total_found = 0;
 
         for (uint32_t segId=0; segId<(uint32_t)segments.size(); segId++) {
             auto& seg = segments[segId];
@@ -426,11 +427,14 @@ struct Engine {
                 if ((int)pq.size() < K) pq.push(h);
                 else if (h.s > pq.top().s) { pq.pop(); pq.push(h); }
             }
+
+            total_found += (uint64_t)score.size();
         }
 
         std::vector<Hit> hits;
         while (!pq.empty()) { hits.push_back(pq.top()); pq.pop(); }
         std::reverse(hits.begin(), hits.end());
+        out["found"] = total_found;           // total matches across all segments
 
         for (auto& h : hits) {
             auto& d = segments[h.segId].docs[h.docId];

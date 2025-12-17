@@ -16,5 +16,6 @@ export type SearchResponse = {
   segments?: number;
   search_time_ms?: number;
   total_time_ms?: number;
+  found?: number;
   results: SearchResult[];
 };
