@@ -43,6 +43,31 @@ code {
   background-color: transparent;
 }
 
+/* "View at {domain}" button */
+.btn-view-at {
+  background: #ffffff;
+  color: #000000;
+  border-color: #000;
+}
+
+.btn-view-at:hover,
+.btn-view-at:focus {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+.btn-view-at:active {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}
+
+/* optional: remove bootstrap focus ring if you don't like it */
+.btn-view-at:focus {
+  box-shadow: none;
+}
+
 /* -----------------------------
    Micro-interactions / motion
    (Bootstrap-friendly)

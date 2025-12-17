@@ -8,6 +8,7 @@ export type SearchResult = {
   json_relpath: string;
   url?: string;
   publish_time?: string;
+  authors?: string;
 };
 
 export type SearchResponse = {

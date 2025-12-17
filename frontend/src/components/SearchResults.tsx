@@ -28,7 +28,7 @@ export default function SearchResults({ results, pageSize = 10 }: Props) {
     const stickySearch = document.querySelector(".search-sticky") as HTMLElement | null;
     const stickySearchH = stickySearch?.getBoundingClientRect().height ?? 0;
 
-    const headerOffset = 5*(fixedNavH) + stickySearchH + 12; // small breathing room
+    const headerOffset = 5 * fixedNavH + stickySearchH + 12; // small breathing room
     const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
 
     window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
@@ -61,160 +61,177 @@ export default function SearchResults({ results, pageSize = 10 }: Props) {
       <div ref={topRef} />
 
       <div className="d-grid gap-3">
-        {pageResults.map((r, idx) => (
-          <div
-            key={r.docId}
-            className="card card-hover shadow-sm fade-in-up"
-            style={{ animationDelay: `${idx * 30}ms` }}
-          >
-            <div className="card-body">
-              <div className="d-flex align-items-start justify-content-between gap-3">
-                <div className="flex-grow-1">
-                  <div className="fw-semibold fs-6 line-clamp-2">
-                    {r.url ? (
-                      <a
-                        className="clean-link"
-                        href={r.url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {r.title || "(untitled)"}
-                      </a>
-                    ) : (
-                      <span>{r.title || "(untitled)"}</span>
+        {pageResults.map((r, idx) => {
+          const domain = r.url ? safeHostname(r.url) : null;
+
+          return (
+            <div
+              key={r.docId}
+              className="card card-hover shadow-sm fade-in-up"
+              style={{ animationDelay: `${idx * 30}ms` }}
+            >
+              <div className="card-body">
+                <div className="d-flex align-items-start justify-content-between gap-3">
+                  <div className="flex-grow-1">
+                    {/* 1) Title */}
+                    <div className="fw-semibold fs-6 line-clamp-2">
+                      {r.url ? (
+                        <a
+                          className="clean-link"
+                          href={r.url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {r.title || "(untitled)"}
+                        </a>
+                      ) : (
+                        <span>{r.title || "(untitled)"}</span>
+                      )}
+                    </div>
+
+                    {/* 3) Author, publish date */}
+                    <div className="small text-secondary mt-1">
+                      {formatByline(r)}
+                    </div>
+
+                    {/* View at {domain} */}
+                    {r.url && domain && (
+                      <div className="mt-2">
+                        <a
+                          href={r.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="btn btn-sm btn-view-at"
+                        >
+                          View at {domain} →
+                        </a>
+                      </div>
                     )}
                   </div>
-
-                  <div className="small text-secondary mt-1">
-                    Published: {r.publish_time ?? "—"}
-                  </div>
-
-                  {r.url && (
-                    <div className="mt-2">
-                      <a
-                        href={r.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="btn btn-sm btn-outline-primary"
-                      >
-                        View article →
-                      </a>
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-end">
-                  {r.url ? (
-                    <div
-                      className="small text-secondary mt-2 truncate"
-                      style={{ maxWidth: 220 }}
-                    >
-                      {safeHostname(r.url)}
-                    </div>
-                  ) : null}
                 </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Pagination (improved styling) */}
       {totalPages > 1 && (
         <div className="mt-4">
-              <div className="d-flex flex-column align-items-center gap-2">
-                <nav aria-label="Search results pages" className="w-100">
-                  <ul
-                    className="pagination justify-content-center flex-wrap mb-0"
-                    style={{ gap: 6 }}
+          <div className="d-flex flex-column align-items-center gap-2">
+            <nav aria-label="Search results pages" className="w-100">
+              <ul
+                className="pagination justify-content-center flex-wrap mb-0"
+                style={{ gap: 6 }}
+              >
+                <li className={`page-item ${safePage === 1 ? "disabled" : ""}`}>
+                  <button
+                    className="page-link rounded-pill border-0"
+                    type="button"
+                    onClick={() => goTo(1)}
+                    aria-label="First page"
                   >
-                    {/* First */}
-                    <li className={`page-item ${safePage === 1 ? "disabled" : ""}`}>
-                      <button
-                        className="page-link rounded-pill border-0"
-                        type="button"
-                        onClick={() => goTo(1)}
-                        aria-label="First page"
-                      >
-                        «
-                      </button>
-                    </li>
+                    «
+                  </button>
+                </li>
 
-                    {/* Prev */}
-                    <li className={`page-item ${safePage === 1 ? "disabled" : ""}`}>
-                      <button
-                        className="page-link rounded-pill border-0"
-                        type="button"
-                        onClick={() => goTo(safePage - 1)}
-                        aria-label="Previous page"
-                      >
-                        ‹
-                      </button>
-                    </li>
+                <li className={`page-item ${safePage === 1 ? "disabled" : ""}`}>
+                  <button
+                    className="page-link rounded-pill border-0"
+                    type="button"
+                    onClick={() => goTo(safePage - 1)}
+                    aria-label="Previous page"
+                  >
+                    ‹
+                  </button>
+                </li>
 
-                    {/* Pages */}
-                    {pageItems.map((it) => (
-                      <li
-                        key={`page-${it}`}
-                        className={`page-item ${it === safePage ? "active" : ""}`}
-                      >
-                        <button
-                          className="page-link rounded-pill border-0"
-                          type="button"
-                          onClick={() => goTo(it)}
-                          aria-current={it === safePage ? "page" : undefined}
-                          style={{
-                            minWidth: 40,
-                            textAlign: "center",
-                            border: it === safePage ? "none" : undefined,
-                          }}
-                        >
-                          {it}
-                        </button>
-                      </li>
-                    ))}
-
-                    {/* Next */}
-                    <li
-                      className={`page-item ${safePage === totalPages ? "disabled" : ""}`}
+                {pageItems.map((it) => (
+                  <li
+                    key={`page-${it}`}
+                    className={`page-item ${it === safePage ? "active" : ""}`}
+                  >
+                    <button
+                      className="page-link rounded-pill border-0"
+                      type="button"
+                      onClick={() => goTo(it)}
+                      aria-current={it === safePage ? "page" : undefined}
+                      style={{
+                        minWidth: 40,
+                        textAlign: "center",
+                        border: it === safePage ? "none" : undefined,
+                      }}
                     >
-                      <button
-                        className="page-link rounded-pill border-0"
-                        type="button"
-                        onClick={() => goTo(safePage + 1)}
-                        aria-label="Next page"
-                      >
-                        ›
-                      </button>
-                    </li>
+                      {it}
+                    </button>
+                  </li>
+                ))}
 
-                    {/* Last */}
-                    <li
-                      className={`page-item ${safePage === totalPages ? "disabled" : ""}`}
-                    >
-                      <button
-                        className="page-link rounded-pill border-0"
-                        type="button"
-                        onClick={() => goTo(totalPages)}
-                        aria-label="Last page"
-                      >
-                        »
-                      </button>
-                    </li>
-                  </ul>
-                </nav>
+                <li
+                  className={`page-item ${safePage === totalPages ? "disabled" : ""}`}
+                >
+                  <button
+                    className="page-link rounded-pill border-0"
+                    type="button"
+                    onClick={() => goTo(safePage + 1)}
+                    aria-label="Next page"
+                  >
+                    ›
+                  </button>
+                </li>
 
-                <div className="small text-secondary">
-                  Page <span className="fw-semibold">{safePage}</span> of{" "}
-                  <span className="fw-semibold">{totalPages}</span>
-                </div>
-              </div>
+                <li
+                  className={`page-item ${safePage === totalPages ? "disabled" : ""}`}
+                >
+                  <button
+                    className="page-link rounded-pill border-0"
+                    type="button"
+                    onClick={() => goTo(totalPages)}
+                    aria-label="Last page"
+                  >
+                    »
+                  </button>
+                </li>
+              </ul>
+            </nav>
+
+            <div className="small text-secondary">
+              Page <span className="fw-semibold">{safePage}</span> of{" "}
+              <span className="fw-semibold">{totalPages}</span>
+            </div>
+          </div>
         </div>
       )}
 
       <br />
     </div>
   );
+}
+
+/**
+ * Formats "author name, publish date".
+ * Supports either `author` or `authors`.
+ */
+function formatByline(r: SearchResult) {
+  const anyR = r as unknown as {
+    author?: unknown;
+    authors?: unknown;
+    publish_time?: unknown;
+  };
+
+  const authorRaw = anyR.author ?? anyR.authors;
+  const author =
+    authorRaw != null && String(authorRaw).trim()
+      ? String(authorRaw).trim()
+      : "—";
+
+  const dateRaw = anyR.publish_time;
+  const date =
+    dateRaw != null && String(dateRaw).trim()
+      ? String(dateRaw).trim()
+      : "—";
+
+  return `${author}, ${date}`;
 }
 
 function safeHostname(url?: string) {
