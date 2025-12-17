@@ -21,6 +21,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [k, setK] = useState(100);
   const [loading, setLoading] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -207,6 +208,13 @@ export default function App() {
                         </div>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-secondary"
+                      onClick={() => setShowAdvanced(true)}
+                    >
+                      Advanced
+                    </button>
                   </div>
 
                   {error && (
