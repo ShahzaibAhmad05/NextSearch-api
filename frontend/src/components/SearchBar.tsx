@@ -27,20 +27,6 @@ export default function SearchBar({ query, k, loading, onChangeQuery, onChangeK,
           placeholder="Search documents..."
         />
         </div>
-
-        <div className="d-flex align-items-center gap-2">
-          <span className="text-secondary small">Results</span>
-          <input
-            className="form-control"
-            type="number"
-            min={1}
-            max={200}
-            value={k}
-            onChange={(e) => onChangeK(Number(e.target.value))}
-            style={{ width: 110 }}
-            aria-label="Top K"
-          />
-        </div>
       </div>
 
       {loading ? <div className="small text-secondary mt-2">Searching…</div> : null}

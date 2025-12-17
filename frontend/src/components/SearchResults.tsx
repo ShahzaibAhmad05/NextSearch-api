@@ -68,6 +68,7 @@ export default function SearchResults({ results }: Props) {
           </div>
         </div>
       ))}
+      <br />
     </div>
   );
 }

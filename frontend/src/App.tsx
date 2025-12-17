@@ -97,10 +97,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Sticky search area */}
+          {/* search area */}
           <div
             className="bg-light py-3"
-            style={{ position: "sticky", top: 72, zIndex: 1020 }}
+            style={{ top: 72, zIndex: 1020 }}
           >
             <div className="card shadow-sm">
               <div className="card-body">
