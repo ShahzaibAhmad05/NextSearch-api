@@ -156,7 +156,8 @@ export default function App() {
             </div>
 
             {/* Search area */}
-            <div className="bg-light py-3">
+            <div className="bg-light py-3 sticky-top"
+            style={{ top: 54, zIndex: 1020 }} >
               <div className="card shadow-sm">
                 <div className="card-body">
                   <SearchBar
@@ -231,7 +232,9 @@ export default function App() {
             </div>
 
             {/* Results */}
-            <SearchResults results={sortedResults} />
+            <div className="px-3 pb-3">
+              <SearchResults results={sortedResults} />
+            </div>
           </div>
         </div>
       )}
