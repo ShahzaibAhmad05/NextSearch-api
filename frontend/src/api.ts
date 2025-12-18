@@ -1,5 +1,5 @@
 // src/api.ts
-import type { SearchResponse } from "./types";
+import type { SearchResponse, SuggestResponse } from "./types";
 
 // Backend defaults to http://127.0.0.1:8080 (see api_server.cpp)
 // You can override with VITE_API_BASE, e.g. http://localhost:8080
@@ -13,7 +13,7 @@ export async function search(query: string, k: number): Promise<SearchResponse> 
 
   const res = await fetch(url.toString(), {
     method: "GET",
-    headers: { Accept: "application/json" }
+    headers: { Accept: "application/json" },
   });
 
   if (!res.ok) {
@@ -22,6 +22,26 @@ export async function search(query: string, k: number): Promise<SearchResponse> 
   }
 
   return (await res.json()) as SearchResponse;
+}
+
+export async function suggest(query: string, k: number, signal?: AbortSignal): Promise<SuggestResponse> {
+  // C++ backend expects: GET /suggest?q=<query>&k=<k>
+  const url = new URL(`${BASE}/suggest`);
+  url.searchParams.set("q", query);
+  url.searchParams.set("k", String(k));
+
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    signal,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Suggest failed (${res.status}): ${text}`);
+  }
+
+  return (await res.json()) as SuggestResponse;
 }
 
 export async function addDocument(payload: {

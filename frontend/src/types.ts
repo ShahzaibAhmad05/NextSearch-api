@@ -20,3 +20,9 @@ export type SearchResponse = {
   found?: number;
   results: SearchResult[];
 };
+
+export type SuggestResponse = {
+  query: string;
+  limit?: number;
+  suggestions: string[];
+};

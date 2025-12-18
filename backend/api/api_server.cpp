@@ -76,6 +76,22 @@ int main(int argc, char** argv) {
         res.set_content(j.dump(2), "application/json");
     });
 
+    svr.Get("/suggest", [&](const httplib::Request& req, httplib::Response& res) {
+        cord19::enable_cors(res);
+
+        if (!req.has_param("q")) {
+            res.status = 400;
+            res.set_content(R"({\"error\":\"missing q param\"})", "application/json");
+            return;
+        }
+        std::string q = req.get_param_value("q");
+        int k = 5;
+        if (req.has_param("k")) k = std::stoi(req.get_param_value("k"));
+
+        auto j = engine.suggest(q, k);
+        res.set_content(j.dump(2), "application/json");
+    });
+
     svr.Post("/add_document", [&](const httplib::Request& req, httplib::Response& res) {
         cord19::handle_add_document(engine, req, res);
     });

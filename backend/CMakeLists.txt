@@ -13,6 +13,7 @@ add_executable(adddocument    AddDocument.cpp)
 add_executable(api_server
   api/api_server.cpp
   api/api_engine.cpp
+  api/api_autocomplete.cpp
   api/api_segment.cpp
   api/api_metadata.cpp
   api/api_http.cpp

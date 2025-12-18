@@ -51,11 +51,44 @@ bool Engine::reload() {
 
     segments = std::move(loaded);
 
+    // Build autocomplete index from the union of all segment lexicons.
+    // Since this is a student project (no query logs), we use df as the ranking score.
+    // (We sum df across segments for the same term.)
+    {
+        std::unordered_map<std::string, uint32_t> term_to_score;
+        term_to_score.reserve(200000);
+        for (const auto& seg : segments) {
+            for (const auto& kv : seg.lex) {
+                const std::string& term = kv.first;
+                const LexEntry& e = kv.second;
+                term_to_score[term] += e.df;
+            }
+        }
+        // Store top 10 candidates per prefix node, return top N at query time.
+        ac.build(term_to_score, 10);
+    }
+
     // reload metadata -> uid_to_meta
     uid_to_meta.clear();
     load_metadata_uid_meta(index_dir / "metadata.csv", uid_to_meta);
 
     return true;
+}
+
+json Engine::suggest(const std::string& user_input, int limit) {
+    std::lock_guard<std::mutex> lock(mtx);
+
+    const int L = std::max(1, std::min(limit, 10)); // cap to prevent abuse
+
+    json out;
+    out["query"] = user_input;
+    out["limit"] = L;
+    out["suggestions"] = json::array();
+
+    if (ac.empty()) return out;
+    auto s = ac.suggest_query(user_input, (size_t)L);
+    for (const auto& t : s) out["suggestions"].push_back(t);
+    return out;
 }
 
 json Engine::search(const std::string& query, int k) {
