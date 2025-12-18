@@ -25,7 +25,7 @@ export default function SearchResults({ results, pageSize = 10 }: Props) {
     const stickySearch = document.querySelector(".search-sticky") as HTMLElement | null;
     const stickySearchH = stickySearch?.getBoundingClientRect().height ?? 0;
 
-    const headerOffset = 5 * fixedNavH + stickySearchH + 12;
+    const headerOffset = 4.5 * fixedNavH + stickySearchH + 12;
     const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
 
     window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
