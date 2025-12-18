@@ -11,6 +11,7 @@
 
 namespace fs = std::filesystem;
 
+// Store per-document metadata
 struct DocInfo {
     std::string cord_uid;
     std::string title;
@@ -18,81 +19,104 @@ struct DocInfo {
     uint32_t doc_len;
 };
 
+// Split a CSV line into columns
 static std::vector<std::string> split_csv_line(const std::string& line) {
     std::vector<std::string> cols;
     std::string cur;
     bool in_quotes = false;
+
+    // Parse characters and handle quoted commas
     for (char c : line) {
         if (c == '"') in_quotes = !in_quotes;
-        else if (c == ',' && !in_quotes) { cols.push_back(cur); cur.clear(); }
-        else cur.push_back(c);
+        else if (c == ',' && !in_quotes) {
+            cols.push_back(cur);
+            cur.clear();
+        } else {
+            cur.push_back(c);
+        }
     }
+
     cols.push_back(cur);
     return cols;
 }
 
+// Pick first path from semicolon-separated list
 static std::string pick_first_path(const std::string& s) {
     size_t pos = s.find(';');
     std::string first = (pos == std::string::npos) ? s : s.substr(0, pos);
-    while (!first.empty() && (first.back()==' ' || first.back()=='\r')) first.pop_back();
-    while (!first.empty() && first.front()==' ') first.erase(first.begin());
+
+    // Trim spaces and CR characters
+    while (!first.empty() && (first.back() == ' ' || first.back() == '\r')) first.pop_back();
+    while (!first.empty() && first.front() == ' ') first.erase(first.begin());
     return first;
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3) {     // enforce cli args are provided correctly
+
+    // Validate command-line arguments
+    if (argc < 3) {
         std::cerr << "Usage: forwardindex <CORD_ROOT> <SEGMENT_DIR>\n";
         return 1;
     }
 
+    // Setup root and segment directories
     fs::path root = fs::path(argv[1]);
     fs::path seg  = fs::path(argv[2]);
     fs::create_directories(seg);
 
+    // Locate metadata.csv
     fs::path meta = root / "metadata.csv";
-    if (!fs::exists(meta)) {        // verify metadata exists
+    if (!fs::exists(meta)) {
         std::cerr << "metadata.csv not found: " << meta << "\n";
         return 1;
     }
 
+    // Open metadata file
     std::ifstream in(meta);
     std::string header;
     std::getline(in, header);
 
+    // Parse header columns
     auto header_cols = split_csv_line(header);
-    auto idx_of = [&](const std::string& name)->int{
-        for (int i=0;i<(int)header_cols.size();i++) if (header_cols[i]==name) return i;
+    auto idx_of = [&](const std::string& name) -> int {
+        for (int i = 0; i < (int)header_cols.size(); i++)
+            if (header_cols[i] == name) return i;
         return -1;
     };
 
+    // Resolve required column indices
     int i_uid   = idx_of("cord_uid");
     int i_title = idx_of("title");
     int i_pdf   = idx_of("pdf_json_files");
     int i_pmc   = idx_of("pmc_json_files");
 
-    if (i_uid<0 || i_title<0 || i_pdf<0 || i_pmc<0) {
+    if (i_uid < 0 || i_title < 0 || i_pdf < 0 || i_pmc < 0) {
         std::cerr << "metadata.csv missing required columns.\n";
         return 1;
     }
 
-    // term -> termId
+    // Global term dictionary
     std::unordered_map<std::string, uint32_t> term_to_id;
     term_to_id.reserve(400000);
     std::vector<std::string> id_to_term;
 
+    // Per-document storage
     std::vector<DocInfo> docs;
-    std::vector<std::vector<std::pair<uint32_t,uint32_t>>> forward; // doc -> (termId, tf)
+    std::vector<std::vector<std::pair<uint32_t, uint32_t>>> forward;
     uint64_t total_len = 0;
 
     std::string line;
     while (std::getline(in, line)) {
         if (line.empty()) continue;
+
+        // Parse one metadata row
         auto cols = split_csv_line(line);
-        if ((int)cols.size() <= std::max({i_uid,i_title,i_pdf,i_pmc})) continue;
+        if ((int)cols.size() <= std::max({i_uid, i_title, i_pdf, i_pmc})) continue;
 
         std::string cord_uid = cols[i_uid];
         std::string title    = cols[i_title];
 
+        // Pick JSON path (PMC preferred, fallback to PDF)
         std::string pmc_rel = pick_first_path(cols[i_pmc]);
         std::string pdf_rel = pick_first_path(cols[i_pdf]);
         std::string rel = !pmc_rel.empty() ? pmc_rel : pdf_rel;
@@ -101,19 +125,22 @@ int main(int argc, char** argv) {
         fs::path json_path = root / fs::path(rel);
         if (!fs::exists(json_path)) continue;
 
+        // Read and parse JSON
         std::string raw = read_file_all(json_path);
         if (raw.empty()) continue;
 
         json j;
-        try { j = json::parse(raw); } catch(...) { continue; }
+        try { j = json::parse(raw); } catch (...) { continue; }
 
+        // Extract and tokenize text
         std::string text = extract_text_from_cord_json(j);
         if (text.empty()) continue;
 
         auto toks = tokenize(text);
 
+        // Build term frequency map
         std::unordered_map<std::string, uint32_t> tf;
-        tf.reserve(toks.size()/2 + 8);
+        tf.reserve(toks.size() / 2 + 8);
 
         uint32_t doc_len = 0;
         for (auto& t : toks) {
@@ -124,21 +151,26 @@ int main(int argc, char** argv) {
         }
         if (doc_len == 0) continue;
 
+        // Store document info
         uint32_t docId = (uint32_t)docs.size();
         docs.push_back(DocInfo{cord_uid, title, rel, doc_len});
         total_len += doc_len;
 
-        std::vector<std::pair<uint32_t,uint32_t>> postings;
+        // Build forward postings for this doc
+        std::vector<std::pair<uint32_t, uint32_t>> postings;
         postings.reserve(tf.size());
 
         for (auto& kv : tf) {
             auto it = term_to_id.find(kv.first);
             uint32_t tid;
+
             if (it == term_to_id.end()) {
                 tid = (uint32_t)id_to_term.size();
                 term_to_id.emplace(kv.first, tid);
                 id_to_term.push_back(kv.first);
-            } else tid = it->second;
+            } else {
+                tid = it->second;
+            }
 
             postings.push_back({tid, kv.second});
         }
@@ -146,9 +178,12 @@ int main(int argc, char** argv) {
         std::sort(postings.begin(), postings.end());
         forward.push_back(std::move(postings));
 
-        if (docId % 1000 == 0) std::cerr << "Docs: " << docId << "\n";
+        // Progress logging
+        if (docId % 1000 == 0)
+            std::cerr << "Docs: " << docId << "\n";
     }
 
+    // Compute average document length
     float avgdl = docs.empty() ? 0.0f : (float)total_len / (float)docs.size();
 
     // Write docs.bin
@@ -183,13 +218,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Write terms.bin (termId -> term string)
+    // Write terms.bin
     {
         std::ofstream out(seg / "terms.bin", std::ios::binary);
         write_u32(out, (uint32_t)id_to_term.size());
-        for (auto& t : id_to_term) write_string(out, t);
+        for (auto& t : id_to_term)
+            write_string(out, t);
     }
 
+    // Final instructions
     std::cerr << "Wrote forward+terms+docs+stats to segment: " << seg << "\n";
     std::cerr << "Now run: lexicon.exe " << seg << "\n";
     return 0;

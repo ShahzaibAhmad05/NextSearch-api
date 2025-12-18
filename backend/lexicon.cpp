@@ -10,24 +10,29 @@
 
 namespace fs = std::filesystem;
 
+// Posting entry for inverted index
 struct Posting { uint32_t docId; uint32_t tf; };
 
 int main(int argc, char** argv) {
+
+    // Read segment directory from CLI
     if (argc < 2) {
         std::cerr << "Usage: lexicon <SEGMENT_DIR>\n";
         return 1;
     }
 
+    // Setup required file paths
     fs::path seg = fs::path(argv[1]);
     fs::path fwd_path  = seg / "forward.bin";
-    fs::path term_path = seg / "terms.bin";     // created by forwardindex.cpp
+    fs::path term_path = seg / "terms.bin";
 
+    // Validate input files exist
     if (!fs::exists(fwd_path) || !fs::exists(term_path)) {
         std::cerr << "Missing forward.bin or terms.bin in: " << seg << "\n";
         return 1;
     }
 
-    // Load terms list: termId -> term
+    // Load term dictionary (termId -> term)
     std::vector<std::string> terms;
     {
         std::ifstream in(term_path, std::ios::binary);
@@ -35,14 +40,16 @@ int main(int argc, char** argv) {
             std::cerr << "Failed to open: " << term_path << "\n";
             return 1;
         }
+
         uint32_t n = read_u32(in);
         terms.resize(n);
-        for (uint32_t i=0;i<n;i++) terms[i] = read_string(in);
+
+        for (uint32_t i = 0; i < n; i++)
+            terms[i] = read_string(in);
     }
 
-    // Read forward index, build inverted postings
+    // Build inverted postings from forward.bin
     std::vector<std::vector<Posting>> inverted(terms.size());
-
     {
         std::ifstream in(fwd_path, std::ios::binary);
         if (!in) {
@@ -52,20 +59,20 @@ int main(int argc, char** argv) {
 
         uint32_t numDocs = read_u32(in);
 
-        for (uint32_t docId=0; docId<numDocs; docId++) {
+        for (uint32_t docId = 0; docId < numDocs; docId++) {
             uint32_t cnt = read_u32(in);
-            for (uint32_t i=0;i<cnt;i++) {
+
+            for (uint32_t i = 0; i < cnt; i++) {
                 uint32_t termId = read_u32(in);
                 uint32_t tf     = read_u32(in);
+
                 if (termId >= inverted.size()) continue;
                 inverted[termId].push_back(Posting{docId, tf});
             }
         }
     }
 
-    // Write BARRELIZED inverted + lexicon.
-    // Per-barrel lexicon entry format:
-    //   term(string), termId(u32), df(u32), offset(u64), count(u32)
+    // Write barrelized lexicon and inverted files
     {
         BarrelParams bp;
         bp.barrel_count = BARREL_COUNT;
@@ -80,22 +87,26 @@ int main(int argc, char** argv) {
         std::vector<uint64_t> offsets(bp.barrel_count, 0);
         std::vector<uint32_t> barrel_term_counts(bp.barrel_count, 0);
 
-        for (uint32_t b=0; b<bp.barrel_count; b++) {
+        // Open barrel output files
+        for (uint32_t b = 0; b < bp.barrel_count; b++) {
             inv[b].open(inv_barrel_path(seg, b), std::ios::binary);
             lex[b].open(lex_barrel_path(seg, b), std::ios::binary);
+
             if (!inv[b] || !lex[b]) {
                 std::cerr << "Failed to open barrel files in: " << seg << "\n";
                 return 1;
             }
-            write_u32(lex[b], 0); // placeholder for number of lex entries in this barrel
+
+            write_u32(lex[b], 0);
         }
 
-        for (uint32_t tid=0; tid<tcount; tid++) {
+        // Write postings and lex entries per term
+        for (uint32_t tid = 0; tid < tcount; tid++) {
             auto& plist = inverted[tid];
             if (plist.empty()) continue;
 
             std::sort(plist.begin(), plist.end(),
-                      [](const Posting& a, const Posting& b){ return a.docId < b.docId; });
+                      [](const Posting& a, const Posting& b) { return a.docId < b.docId; });
 
             uint32_t df = (uint32_t)plist.size();
             uint32_t b  = barrel_for_term(tid, bp);
@@ -112,11 +123,12 @@ int main(int argc, char** argv) {
                 write_u32(inv[b], p.docId);
                 write_u32(inv[b], p.tf);
             }
+
             offsets[b] += (uint64_t)df * (sizeof(uint32_t) * 2);
         }
 
-        // Patch barrel term counts at start of each lexicon_bXXX.bin
-        for (uint32_t b=0; b<bp.barrel_count; b++) {
+        // Patch header counts in each lex barrel file
+        for (uint32_t b = 0; b < bp.barrel_count; b++) {
             lex[b].flush();
             lex[b].close();
 
@@ -128,6 +140,7 @@ int main(int argc, char** argv) {
                 std::cerr << "Failed to patch lexicon barrel: " << lex_barrel_path(seg, b) << "\n";
                 return 1;
             }
+
             patch.seekp(0, std::ios::beg);
             write_u32(patch, barrel_term_counts[b]);
             patch.flush();

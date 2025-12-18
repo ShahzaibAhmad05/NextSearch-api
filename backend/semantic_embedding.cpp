@@ -7,12 +7,14 @@
 
 namespace cord19 {
 
+// Dot product for two vectors
 static inline float dot(const float* a, const float* b, int d) {
     float s = 0.0f;
     for (int i = 0; i < d; ++i) s += a[i] * b[i];
     return s;
 }
 
+// Normalize a vector to unit length
 void SemanticIndex::l2_normalize(std::vector<float>& v) {
     double ss = 0.0;
     for (float x : v) ss += (double)x * (double)x;
@@ -21,6 +23,7 @@ void SemanticIndex::l2_normalize(std::vector<float>& v) {
     for (float& x : v) x = (float)(x / n);
 }
 
+// Get pointer to stored embedding vector for a term
 const float* SemanticIndex::get_vec_ptr(const std::string& term) const {
     auto it = term_to_row.find(term);
     if (it == term_to_row.end()) return nullptr;
@@ -28,6 +31,7 @@ const float* SemanticIndex::get_vec_ptr(const std::string& term) const {
     return &vecs[(size_t)row * (size_t)dim];
 }
 
+// Load embeddings from text file for selected terms
 bool SemanticIndex::load_from_text(const fs::path& path,
                                   const std::unordered_set<std::string>& needed_terms) {
     enabled = false;
@@ -36,6 +40,7 @@ bool SemanticIndex::load_from_text(const fs::path& path,
     vecs.clear();
     term_to_row.clear();
 
+    // Open embedding file
     std::ifstream in(path);
     if (!in.is_open()) return false;
 
@@ -43,6 +48,7 @@ bool SemanticIndex::load_from_text(const fs::path& path,
     bool first_line = true;
     size_t loaded = 0;
 
+    // Detect optional header line like "400000 300"
     auto looks_like_header = [](const std::string& s) -> bool {
         std::istringstream iss(s);
         long long a, b;
@@ -52,22 +58,26 @@ bool SemanticIndex::load_from_text(const fs::path& path,
         return a > 0 && b > 0 && b < 5000;
     };
 
+    // Parse embedding lines
     while (std::getline(in, line)) {
         if (line.empty()) continue;
 
+        // Skip header line if present
         if (first_line) {
             first_line = false;
-            if (looks_like_header(line)) continue; // skip header
+            if (looks_like_header(line)) continue;
         }
 
         std::istringstream iss(line);
         std::string word;
         if (!(iss >> word)) continue;
 
+        // Filter to needed terms only
         if (!needed_terms.empty() && needed_terms.find(word) == needed_terms.end()) {
             continue;
         }
 
+        // Read vector values
         std::vector<float> v;
         float x;
         while (iss >> x) v.push_back(x);
@@ -76,6 +86,7 @@ bool SemanticIndex::load_from_text(const fs::path& path,
         if (dim == 0) dim = (int)v.size();
         if ((int)v.size() != dim) continue;
 
+        // Store normalized vector
         l2_normalize(v);
 
         uint32_t row = (uint32_t)terms.size();
@@ -89,6 +100,7 @@ bool SemanticIndex::load_from_text(const fs::path& path,
     return enabled;
 }
 
+// Find most similar stored vectors to a query vector
 std::vector<std::pair<uint32_t, float>> SemanticIndex::most_similar_to_vec(
     const float* qvec,
     int topk,
@@ -97,11 +109,13 @@ std::vector<std::pair<uint32_t, float>> SemanticIndex::most_similar_to_vec(
     std::vector<std::pair<uint32_t, float>> out;
     if (!enabled || dim <= 0 || !qvec || topk <= 0) return out;
 
+    // Top-k heap storage
     struct Node { float sim; uint32_t row; };
-    auto cmp = [](const Node& a, const Node& b) { return a.sim > b.sim; }; // min-heap
+    auto cmp = [](const Node& a, const Node& b) { return a.sim > b.sim; };
     std::vector<Node> heap;
     heap.reserve((size_t)topk);
 
+    // Scan all rows and keep best matches
     const size_t nrows = terms.size();
     for (size_t r = 0; r < nrows; ++r) {
         uint32_t row = (uint32_t)r;
@@ -121,6 +135,7 @@ std::vector<std::pair<uint32_t, float>> SemanticIndex::most_similar_to_vec(
         }
     }
 
+    // Convert heap to sorted output
     std::sort_heap(heap.begin(), heap.end(), cmp);
     std::reverse(heap.begin(), heap.end());
 
@@ -129,6 +144,7 @@ std::vector<std::pair<uint32_t, float>> SemanticIndex::most_similar_to_vec(
     return out;
 }
 
+// Expand query terms using nearest neighbors from embeddings
 std::vector<std::pair<std::string, float>> SemanticIndex::expand(
     const std::vector<std::string>& query_terms,
     int per_term,
@@ -139,10 +155,12 @@ std::vector<std::pair<std::string, float>> SemanticIndex::expand(
     std::unordered_map<std::string, float> w;
     w.reserve((size_t)max_total_terms * 2);
 
+    // Add original query terms
     for (const auto& t : query_terms) {
         if (!t.empty()) w[t] = 1.0f;
     }
 
+    // Return base terms if semantic is disabled
     if (!enabled || dim <= 0 || query_terms.empty()) {
         std::vector<std::pair<std::string, float>> out;
         out.reserve(w.size());
@@ -150,6 +168,7 @@ std::vector<std::pair<std::string, float>> SemanticIndex::expand(
         return out;
     }
 
+    // Build banned set for original terms
     std::unordered_set<uint32_t> banned;
     banned.reserve(query_terms.size() * 2);
     for (const auto& t : query_terms) {
@@ -157,6 +176,7 @@ std::vector<std::pair<std::string, float>> SemanticIndex::expand(
         if (it != term_to_row.end()) banned.insert(it->second);
     }
 
+    // Per-term neighbor expansion
     for (const auto& t : query_terms) {
         const float* v = get_vec_ptr(t);
         if (!v) continue;
@@ -170,9 +190,11 @@ std::vector<std::pair<std::string, float>> SemanticIndex::expand(
         }
     }
 
+    // Global centroid expansion
     if (global_topk > 0) {
         std::vector<float> q((size_t)dim, 0.0f);
         int cnt = 0;
+
         for (const auto& t : query_terms) {
             const float* v = get_vec_ptr(t);
             if (!v) continue;
@@ -194,6 +216,7 @@ std::vector<std::pair<std::string, float>> SemanticIndex::expand(
         }
     }
 
+    // Convert map to sorted list
     std::vector<std::pair<std::string, float>> out;
     out.reserve(w.size());
     for (auto& kv : w) out.push_back(kv);
