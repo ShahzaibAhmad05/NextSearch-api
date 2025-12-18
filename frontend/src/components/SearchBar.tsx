@@ -26,6 +26,7 @@ export default function SearchBar({
 
   const abortRef = useRef<AbortController | null>(null);
   const blurTimerRef = useRef<number | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   const trimmed = useMemo(() => query.trim(), [query]);
 
@@ -73,6 +74,7 @@ export default function SearchBar({
     onChangeQuery(value);
     setOpen(false);
     setActiveIdx(-1);
+    inputRef.current?.blur(); // blur on pick
     // Trigger search immediately on pick
     onSubmit();
   }
@@ -96,6 +98,7 @@ export default function SearchBar({
           />
 
           <input
+            ref={inputRef}
             className="form-control form-control-lg"
             style={{
               padding: "0.7rem 1.3rem 0.7rem 3.2rem",
@@ -144,8 +147,14 @@ export default function SearchBar({
               }
 
               if (e.key === "Enter") {
+                e.preventDefault();
+
+                // Close suggestions + remove focus so dropdown doesn't stay open
+                setOpen(false);
+                setActiveIdx(-1);
+                inputRef.current?.blur();
+
                 if (open && activeIdx >= 0 && activeIdx < suggestions.length) {
-                  e.preventDefault();
                   pickSuggestion(suggestions[activeIdx]);
                   return;
                 }
