@@ -2,6 +2,7 @@
 
 namespace cord19 {
 
+// Enable CORS for HTTP responses
 void enable_cors(httplib::Response& res) {
     res.set_header("Access-Control-Allow-Origin", "*");
     res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
