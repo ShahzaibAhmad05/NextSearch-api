@@ -48,6 +48,7 @@ code {
   background: #ffffff;
   color: #000000;
   border-color: #000;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .btn-view-at:hover,
@@ -55,6 +56,7 @@ code {
   background: #111;
   color: #fff;
   border-color: #111;
+  transform: scale(1.035);
 }
 
 .btn-view-at:active {
@@ -180,7 +182,6 @@ code {
 }
 
 .line-clamp-2 {
-  display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
