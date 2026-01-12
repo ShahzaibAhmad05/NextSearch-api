@@ -532,103 +532,13 @@ void handle_add_document(
     const httplib::ContentReader& content_reader
 ) {
     enable_cors(res);
-
-    using clock = std::chrono::steady_clock;
-    auto t0 = clock::now();
-
-    fs::path uploads = engine.index_dir / "tmp_uploads";
-    fs::create_directories(uploads);
-
-    std::string token = rand_hex(12);
-    fs::path zip_path = uploads / ("cord_slice_" + token + ".zip");
-    fs::path extract_dir = uploads / ("cord_slice_" + token);
-
-    std::string filename, perr;
-    if (!stream_multipart_file_field_to_path(req, content_reader, "cord_slice", zip_path, filename, perr)) {
-        res.status = 400;
-        json j;
-        j["error"] = "Expected multipart/form-data with file field 'cord_slice' (a .zip).";
-        j["details"] = perr;
-        res.set_content(j.dump(2), "application/json");
-        try { fs::remove(zip_path); } catch (...) {}
-        return;
-    }
-
-    std::string err;
-    if (!extract_zip_to(zip_path, extract_dir, err)) {
-        res.status = 500;
-        json j;
-        j["error"] = "Failed to extract zip";
-        j["details"] = err;
-        res.set_content(j.dump(2), "application/json");
-        try { fs::remove(zip_path); } catch (...) {}
-        try { fs::remove_all(extract_dir); } catch (...) {}
-        return;
-    }
-
-    fs::path slice_root;
-    if (!find_slice_root(extract_dir, slice_root)) {
-        res.status = 400;
-        json j;
-        j["error"] = "Uploaded zip does not contain a valid CORD-19 slice root (missing metadata.csv and document_parses/).";
-        res.set_content(j.dump(2), "application/json");
-        try { fs::remove(zip_path); } catch (...) {}
-        try { fs::remove_all(extract_dir); } catch (...) {}
-        return;
-    }
-
-    fs::path segments_dir = engine.index_dir / "segments";
-    fs::create_directories(segments_dir);
-
-    auto segs = load_manifest(engine.index_dir / "manifest.bin");
-    uint32_t new_id = (uint32_t)segs.size() + 2;
-    std::string new_seg = seg_name_local(new_id);
-    fs::path segdir = segments_dir / new_seg;
-    fs::create_directories(segdir);
-
-    uint32_t num_docs = 0;
-    if (!build_forward_terms_docs_stats_from_slice(slice_root, segdir, num_docs, err)) {
-        res.status = 400;
-        json j;
-        j["error"] = "Failed to build forward index from uploaded slice";
-        j["details"] = err;
-        res.set_content(j.dump(2), "application/json");
-        try { fs::remove(zip_path); } catch (...) {}
-        try { fs::remove_all(extract_dir); } catch (...) {}
-        return;
-    }
-
-    if (!build_barrelized_lexicon_from_forward(segdir, err)) {
-        res.status = 500;
-        json j;
-        j["error"] = "Failed to build inverted index for new segment";
-        j["details"] = err;
-        res.set_content(j.dump(2), "application/json");
-        try { fs::remove(zip_path); } catch (...) {}
-        try { fs::remove_all(extract_dir); } catch (...) {}
-        return;
-    }
-
-    segs.push_back(new_seg);
-    save_manifest(engine.index_dir / "manifest.bin", segs);
-
-    bool reloaded = engine.reload();
-
-    auto t1 = clock::now();
-    double total_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
-
-    json out;
-    out["ok"] = true;
-    out["segment"] = new_seg;
-    out["docs_indexed"] = num_docs;
-    out["reloaded"] = reloaded;
-    out["total_time_ms"] = total_ms;
-    out["upload_filename"] = filename;
-
-    res.set_content(out.dump(2), "application/json");
-
-    try { fs::remove(zip_path); } catch (...) {}
-    try { fs::remove_all(extract_dir); } catch (...) {}
+    
+    // Feature disabled in current version
+    res.status = 503;
+    json j;
+    j["error"] = "\"Add Document\" is disabled for the current version";
+    res.set_content(j.dump(2), "application/json");
+    return;
 }
 
 } // namespace cord19
