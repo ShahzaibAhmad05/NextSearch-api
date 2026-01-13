@@ -1,54 +1,257 @@
-# NextSearch - A Scalable Search Engine
 
-An efficient search engine implementation in **C++**, capable of generating a **Lexicon**, **Forward Index**, and **Inverted Index** from a CSV dataset, along with a Frontend built in React with Typescript.
+# NextSearch---A Scalable Search Engine 
 
-This project demonstrates core indexing concepts used in modern search engines.
+**NextSearch** is a scalable **C++-based Search Engine** project inspired by modern search architectures.  
+It demonstrates how real search engines work internally from document ingestion to indexing and querying.
 
----
+This project is suitable for:
+- Software Engineering projects
+- Search engine fundamentals
+- Systems & backend development
+- Research & large-dataset indexing
+- Data Structure & Algorithms Project
 
-## **Project Structure**
+
+## Table of Contents
+- Overview
+- Features
+- Tech Stack
+- Project Architecture
+- Project Structure
+- Installation
+- Build Instructions
+- How to Run
+- API Modules
+- Docker Support
+- Dataset Usage
+- Common Errors
+- Future Improvements
+- Contributing
+- License
+- Author
+
+## Overview
+
+NextSearch is a **search engine core written in C++** that focuses on:
+
+- Efficient document indexing
+- Forward & inverted index construction
+- Lexicon generation
+- Modular API-based search operations
+- Scalability for large datasets (e.g. research papers)
+
+The project mimics the **backend logic** of real-world search engines like Google or Bing at a system level.
+
+## Features
+
+✔ Forward Index generation  
+✔ Inverted Index & Lexicon  
+✔ Fast document lookup  
+✔ Modular API components  
+✔ Designed for large datasets  
+✔ Docker support  
+✔ Clean & extendable C++ codebase  
+
+
+## Tech Stack
+
+- **Language:** C++ (Modern C++)
+- **Build System:** CMake
+- **Containerization:** Docker
+- **Version Control:** Git & GitHub
+- **OS Support:** Windows, Linux
+
+
+## Project Architecture
+
+```
+
+Documents
+↓
+AddDocument
+↓
+Forward Index
+↓
+Inverted Index
+↓
+Lexicon
+↓
+API Server
+↓
+Search Queries
+
+```
+
+
+## Project Structure
+
+```
+
+NextSearch/
+│
+├── .github/                 # GitHub workflows
+├── helper_scripts/          # Helper & automation scripts
+│
+├── AddDocument.cpp          # Document ingestion
+├── ForwardIndex.cpp         # Forward index creation
+│
+├── api_add_document.cpp
+├── api_add_document.hpp
+├── api_autocomplete.cpp
+├── api_autocomplete.hpp
+├── api_metadata.cpp
+├── api_metadata.hpp
+├── api_server.cpp
+├── api_server.hpp
+│
+├── CMakeLists.txt           # Build configuration
+├── Dockerfile               # Docker support
+├── LICENSE
+└── README.md
 
 ````
-NextSearch
-├─ AddDocument.cpp
-├─ api_add_document.cpp
-├─ api_add_document.hpp
-├─ api_autocomplete.cpp
-├─ api_autocomplete.hpp
-├─ api_engine.cpp
-├─ api_engine.hpp
-├─ api_http.cpp
-├─ api_http.hpp
-├─ api_metadata.cpp
-├─ api_metadata.hpp
-├─ api_segment.cpp
-├─ api_segment.hpp
-├─ api_server.cpp
-├─ api_types.hpp
-├─ barrels.hpp
-├─ CMakeLists.txt
-├─ cordjson.hpp
-├─ Dockerfile
-└─ ForwardIndex.cpp
-````
 
----
 
-## Usage
+## Installation
 
-Get a subset of the Cord19 Dataset from [here](https://drive.google.com/file/d/13TQhCDnkPcsjJbZFkgEHuaV50UPCIZKb/view?usp=drive_link).
+### Install Prerequisites
 
-- Place the dataset in a known directory, for example, D:/cord_19/
+Make sure you have:
 
-- Build backend using cmake:
+- C++ Compiler (g++ / clang++ / MSVC)
+- CMake
+- Git
 
-````
+Check versions:
+```bash
+g++ --version
+cmake --version
+git --version
+```
+
+## Clone the Repository
+
+```bash
+git clone https://github.com/ShahzaibAhmad05/NextSearch.git
+cd NextSearch
+```
+
+## Build Instructions (CMake)
+
+### Configure Build
+
+```bash
+cmake -S . -B build
+```
+
+### Compile
+
+```bash
+cmake --build build
+```
+
+Compiled binaries will appear inside the `build/` directory.
+
+
+## How to Run
+
+After building:
+
+```bash
+cd build
+```
+
+Run indexing tools or API server depending on your build output:
+
+```bash
+./ForwardIndex
+./AddDocument
+./api_server
+```
+
+> ⚠ Executable names may vary depending on your OS and CMake configuration.
+
+
+## API Modules
+
+The project includes multiple API components:
+
+* `api_add_document` → Add new documents
+* `api_autocomplete` → Query suggestions
+* `api_metadata` → Document metadata access
+* `api_server` → Main search server
+
+These APIs are designed to be connected with a frontend later.
+
+
+## Docker Support
+
+### Build Docker Image
+
+```bash
+docker build -t nextsearch .
+```
+
+### Run Container
+
+```bash
+docker run --rm -p 8080:8080 nextsearch
+```
+
+
+## Dataset Usage
+
+This project is designed to work with **large text datasets**, such as:
+
+* Research papers
+* News articles
+* Document corpora (e.g. CORD-19)
+
+Place your dataset in a directory and provide its path to the indexing modules.
+
+
+## Common Errors & Fixes
+
+### `fatal: not a git repository`
+
+✔ Make sure you are inside the cloned folder:
+
+```bash
+cd NextSearch
+```
+
+
+### CMake build errors
+
+✔ Delete old build folder and rebuild:
+
+```bash
+rm -rf build
 cmake -S . -B build
 cmake --build build
-````
+```
 
-- Run `forwardindex.exe` to create forward index.
 
-- Run `lexicon.exe` to create inverted index, and lexicon.
+## Contributing
 
-- Run `api_server.exe` to run the backend API locally.
+Contributions are welcome!
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Open a Pull Request
+
+
+## License
+
+This project is licensed under the terms of the **LICENSE** file included in this repository.
+
+
+## Authors
+
+**Shahzaib Ahmad , Muhammad Ali & Shehroz Shoukat as DSA Project in 3rd Sem.**
+GitHub: [https://github.com/ShahzaibAhmad05](https://github.com/ShahzaibAhmad05)
+
+ If you found this project useful, **give it a star on GitHub!**
+
+
