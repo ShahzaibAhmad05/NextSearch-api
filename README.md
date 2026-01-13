@@ -10,67 +10,26 @@ This project demonstrates core indexing concepts used in modern search engines.
 
 ````
 NextSearch
-NextSearch
-├─ backend/
-│  ├─ api/
-│  │  ├─ api_add_document.cpp
-│  │  ├─ api_add_document.hpp
-│  │  ├─ api_autocomplete.cpp
-│  │  ├─ api_autocomplete.hpp
-│  │  ├─ api_engine.cpp
-│  │  ├─ api_engine.hpp
-│  │  ├─ api_http.cpp
-│  │  ├─ api_http.hpp
-│  │  ├─ api_metadata.cpp
-│  │  ├─ api_metadata.hpp
-│  │  ├─ api_segment.cpp
-│  │  ├─ api_segment.hpp
-│  │  ├─ api_server.cpp
-│  │  └─ api_types.hpp
-│  ├─ AddDocument.cpp
-│  ├─ barrels.hpp
-│  ├─ CMakeLists.txt
-│  ├─ cordjson.hpp
-│  ├─ Dockerfile
-│  ├─ ForwardIndex.cpp
-│  ├─ indexio.hpp
-│  ├─ lexicon.cpp
-│  ├─ README.md
-│  ├─ segment_writer.hpp
-│  ├─ semantic_embedding.cpp
-│  ├─ semantic_embedding.hpp
-│  ├─ textutil.hpp
-│  └─ third_party.zip
-├─ frontend/
-│  ├─ public/
-│  │  └─ vite.svg
-│  ├─ src/
-│  │  ├─ assets/
-│  │  │  └─ react.svg
-│  │  ├─ components/
-│  │  │  ├─ AddDocumentModal.tsx
-│  │  │  ├─ SearchBar.tsx
-│  │  │  └─ SearchResults.tsx
-│  │  ├─ api.ts
-│  │  ├─ App.css
-│  │  ├─ App.tsx
-│  │  ├─ index.css
-│  │  ├─ main.tsx
-│  │  ├─ types.ts
-│  │  └─ vite-env.d.ts
-│  ├─ eslint.config.js
-│  ├─ index.html
-│  ├─ package-lock.json
-│  ├─ package.json
-│  ├─ README.md
-│  ├─ tsconfig.app.json
-│  ├─ tsconfig.json
-│  ├─ tsconfig.node.json
-│  └─ vite.config.ts
-├─ helper_scripts/
-│  └─ slice_cord19.py
-├─ LICENSE
-└─ README.md
+├─ AddDocument.cpp
+├─ api_add_document.cpp
+├─ api_add_document.hpp
+├─ api_autocomplete.cpp
+├─ api_autocomplete.hpp
+├─ api_engine.cpp
+├─ api_engine.hpp
+├─ api_http.cpp
+├─ api_http.hpp
+├─ api_metadata.cpp
+├─ api_metadata.hpp
+├─ api_segment.cpp
+├─ api_segment.hpp
+├─ api_server.cpp
+├─ api_types.hpp
+├─ barrels.hpp
+├─ CMakeLists.txt
+├─ cordjson.hpp
+├─ Dockerfile
+└─ ForwardIndex.cpp
 ````
 
 ---
