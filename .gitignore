@@ -35,6 +35,7 @@ third_party/
 *.log
 *.tmp
 a.exe
+**/*.json
 
 # Secrets
 .env

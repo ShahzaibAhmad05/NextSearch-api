@@ -8,6 +8,7 @@
 #include "api_ai_overview.hpp"
 #include "api_ai_summary.hpp"
 #include "api_engine.hpp"
+#include "api_feedback.hpp"
 #include "api_http.hpp"
 #include "env_loader.hpp"
 #include "third_party/httplib.h"
@@ -50,6 +51,9 @@ int main(int argc, char** argv) {
     } else {
         std::cout << "[azure] Azure OpenAI not configured (AI overview endpoint will return error)\n";
     }
+
+    // Initialize feedback manager with storage in root directory
+    cord19::FeedbackManager feedback_manager("feedback.json");
 
     httplib::Server svr;
 
@@ -329,6 +333,10 @@ int main(int argc, char** argv) {
             }
             res.set_content(error_response.dump(2), "application/json");
         }
+    });
+
+    svr.Post("/api/feedback", [&](const httplib::Request& req, httplib::Response& res) {
+        cord19::handle_feedback(feedback_manager, req, res);
     });
 
     std::cout << "API running on http://127.0.0.1:" << port << "\n";
