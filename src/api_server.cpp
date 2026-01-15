@@ -2,6 +2,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <thread>
 
 #include "api_add_document.hpp"
 #include "api_ai_overview.hpp"
@@ -218,8 +219,33 @@ int main(int argc, char** argv) {
         
         std::cerr << "[ai_overview] Processing query: \"" << query << "\" k=" << k << "\n";
         
-        // Get search results from cache or perform search
-        auto search_results = engine.search(query, k);
+        // Wait for cached results (retry with backoff for race condition with parallel /api/search call)
+        json search_results;
+        bool found_cache = false;
+        const int max_retries = 10;  // Max ~500ms wait (10 * 50ms)
+        
+        for (int retry = 0; retry < max_retries; retry++) {
+            search_results = engine.search(query, k);
+            
+            // Check if results came from cache (meaning /api/search already populated it)
+            if (search_results.contains("from_cache") && search_results["from_cache"] == true) {
+                found_cache = true;
+                std::cerr << "[ai_overview] Found cached results after " << retry << " retries\n";
+                break;
+            }
+            
+            // If we have results (even if not cached yet), we can use them
+            if (search_results.contains("results") && !search_results["results"].empty()) {
+                std::cerr << "[ai_overview] Using fresh search results (cache being populated)\n";
+                found_cache = true;
+                break;
+            }
+            
+            // Wait 50ms before retry (allow time for parallel /api/search to populate cache)
+            if (retry < max_retries - 1) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }
         
         // Check if we got valid results
         if (!search_results.contains("results") || search_results["results"].empty()) {
@@ -231,19 +257,26 @@ int main(int argc, char** argv) {
             return;
         }
         
-        // Generate AI overview using Azure OpenAI
-        auto ai_response = cord19::generate_ai_overview(azure_config, query, search_results);
+        // Generate AI overview using Azure OpenAI with caching
+        auto ai_response = cord19::generate_ai_overview(azure_config, query, k, search_results, &engine);
         
-        // Prepare final response
+        // Prepare minimal response (no search results, just AI overview)
         json response;
         response["query"] = query;
-        response["search_results"] = search_results;
-        response["ai_overview"] = ai_response;
         
         if (ai_response.contains("success") && ai_response["success"] == true) {
+            response["overview"] = ai_response["overview"];
+            response["model"] = ai_response["model"];
+            if (ai_response.contains("usage")) {
+                response["usage"] = ai_response["usage"];
+            }
             res.set_content(response.dump(2), "application/json");
         } else {
             res.status = 500;
+            response["error"] = ai_response.contains("error") ? ai_response["error"] : "Unknown error";
+            if (ai_response.contains("details")) {
+                response["details"] = ai_response["details"];
+            }
             res.set_content(response.dump(2), "application/json");
         }
     });

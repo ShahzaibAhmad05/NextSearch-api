@@ -36,5 +36,5 @@ target_include_directories(api_server PRIVATE ${INCLUDE_DIR} ${CMAKE_SOURCE_DIR}
 # Windows-only compile flags and libraries
 if (WIN32)
   target_compile_definitions(api_server PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00 CPPHTTPLIB_NO_MMAP)
-  target_link_libraries(api_server PRIVATE ws2_32 iphlpapi)
+  target_link_libraries(api_server PRIVATE ws2_32 iphlpapi winhttp)
 endif()

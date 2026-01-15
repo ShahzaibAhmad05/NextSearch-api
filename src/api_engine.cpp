@@ -245,6 +245,85 @@ void Engine::put_in_cache(const std::string& cache_key, const json& result) {
     cache[cache_key] = entry;
 }
 
+// Get AI overview from cache if available and not expired, update LRU
+json Engine::get_ai_from_cache(const std::string& cache_key) {
+    auto it = ai_cache.find(cache_key);
+    if (it == ai_cache.end()) {
+        return json(); // empty json means not found
+    }
+    
+    // Check if entry is expired
+    if (is_cache_entry_expired(it->second)) {
+        // Remove expired entry
+        ai_lru_list.erase(it->second.lru_iter);
+        ai_cache.erase(it);
+        return json(); // treat as cache miss
+    }
+    
+    // Move to front of LRU list (most recently used)
+    ai_lru_list.erase(it->second.lru_iter);
+    ai_lru_list.push_front(cache_key);
+    it->second.lru_iter = ai_lru_list.begin();
+    
+    // Return a copy of cached result
+    json result = it->second.result;
+    result["from_cache"] = true;
+    return result;
+}
+
+// Put AI overview in cache with LRU eviction (expired entries evicted first)
+void Engine::put_ai_in_cache(const std::string& cache_key, const json& result) {
+    auto now = std::chrono::steady_clock::now();
+    
+    // Check if already in cache (shouldn't happen, but handle it)
+    auto it = ai_cache.find(cache_key);
+    if (it != ai_cache.end()) {
+        // Update existing entry with new timestamp
+        ai_lru_list.erase(it->second.lru_iter);
+        ai_lru_list.push_front(cache_key);
+        it->second.result = result;
+        it->second.lru_iter = ai_lru_list.begin();
+        it->second.timestamp = now;
+        return;
+    }
+    
+    // Evict if cache is full - prioritize expired entries
+    if (ai_cache.size() >= MAX_AI_CACHE_SIZE) {
+        std::string key_to_evict;
+        bool found_expired = false;
+        
+        // First, try to find an expired entry (scan from back - oldest entries)
+        for (auto lru_it = ai_lru_list.rbegin(); lru_it != ai_lru_list.rend(); ++lru_it) {
+            auto cache_it = ai_cache.find(*lru_it);
+            if (cache_it != ai_cache.end() && is_cache_entry_expired(cache_it->second)) {
+                key_to_evict = *lru_it;
+                found_expired = true;
+                break;
+            }
+        }
+        
+        // If no expired entry found, evict LRU (least recently used)
+        if (!found_expired) {
+            key_to_evict = ai_lru_list.back();
+        }
+        
+        // Remove the selected entry
+        auto evict_it = ai_cache.find(key_to_evict);
+        if (evict_it != ai_cache.end()) {
+            ai_lru_list.erase(evict_it->second.lru_iter);
+            ai_cache.erase(evict_it);
+        }
+    }
+    
+    // Add new entry with timestamp
+    ai_lru_list.push_front(cache_key);
+    CacheEntry entry;
+    entry.result = result;
+    entry.lru_iter = ai_lru_list.begin();
+    entry.timestamp = now;
+    ai_cache[cache_key] = entry;
+}
+
 // Run BM25 search with optional semantic expansion and return JSON results
 json Engine::search(const std::string& query, int k) {
 

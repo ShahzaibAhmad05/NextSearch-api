@@ -1,21 +1,26 @@
 #include "api_ai_overview.hpp"
-#include "third_party/httplib.h"
+#include "api_engine.hpp"
 #include <iostream>
 #include <sstream>
+#include <windows.h>
+#include <winhttp.h>
+
+#pragma comment(lib, "winhttp.lib")
 
 namespace cord19 {
 
 // Helper function to construct the system prompt for AI overview generation
 static std::string build_system_prompt() {
-    return R"(You are an AI assistant that generates concise, informative overviews of search results.
-Your task is to analyze the provided search results and create a comprehensive summary that:
-1. Answers the user's query directly
-2. Synthesizes information from multiple sources
-3. Highlights key findings and relevant details
-4. Maintains accuracy and avoids speculation
-5. Cites specific documents when appropriate
+    return R"(You are an AI assistant that generates short, informative overviews of search results in proper markdown format with headings and newline chars.
 
-Keep your overview clear, factual, and helpful.)";
+    Your task is to analyze the provided search results and create a comprehensive summary that:
+    1. Answers the user's query directly
+    2. Synthesizes information from multiple sources
+    3. Highlights key findings and relevant details
+    4. Maintains accuracy and avoids speculation
+    5. Cites specific documents when appropriate
+
+    Keep your overview clear, factual, and helpful.)";
 }
 
 // Helper function to build the user prompt with search results
@@ -65,29 +70,127 @@ static std::string build_user_prompt(const std::string& query, const json& searc
     return oss.str();
 }
 
-json generate_ai_overview(const AzureOpenAIConfig& config,
-                          const std::string& query,
-                          const json& search_results) {
-    json response_json;
+// Helper function to make HTTPS POST request using WinHTTP
+static std::string make_https_post(const std::string& url, const std::string& path, 
+                                   const std::string& api_key, const std::string& body) {
+    HINTERNET hSession = NULL, hConnect = NULL, hRequest = NULL;
+    std::string response;
     
     try {
-        // Validate endpoint
-        std::string endpoint = config.endpoint;
-        
-        // Remove trailing slash if present
-        if (endpoint.back() == '/') {
-            endpoint.pop_back();
+        // Parse URL to extract host
+        std::string host = url;
+        if (host.find("https://") == 0) {
+            host = host.substr(8);
+        }
+        if (host.back() == '/') {
+            host.pop_back();
         }
         
+        // Convert to wide strings
+        std::wstring whost(host.begin(), host.end());
+        std::wstring wpath(path.begin(), path.end());
+        
+        // Initialize WinHTTP
+        hSession = WinHttpOpen(L"AzureOpenAI/1.0",
+                              WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                              WINHTTP_NO_PROXY_NAME,
+                              WINHTTP_NO_PROXY_BYPASS, 0);
+        
+        if (!hSession) return "";
+        
+        hConnect = WinHttpConnect(hSession, whost.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
+        if (!hConnect) {
+            WinHttpCloseHandle(hSession);
+            return "";
+        }
+        
+        hRequest = WinHttpOpenRequest(hConnect, L"POST", wpath.c_str(),
+                                     NULL, WINHTTP_NO_REFERER,
+                                     WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                     WINHTTP_FLAG_SECURE);
+        
+        if (!hRequest) {
+            WinHttpCloseHandle(hConnect);
+            WinHttpCloseHandle(hSession);
+            return "";
+        }
+        
+        // Set headers
+        std::string headers_str = "Content-Type: application/json\r\n";
+        headers_str += "api-key: " + api_key + "\r\n";
+        std::wstring wheaders(headers_str.begin(), headers_str.end());
+        
+        // Send request
+        BOOL bResults = WinHttpSendRequest(hRequest,
+                                          wheaders.c_str(),
+                                          (DWORD)-1,
+                                          (LPVOID)body.c_str(),
+                                          (DWORD)body.length(),
+                                          (DWORD)body.length(),
+                                          0);
+        
+        if (bResults) {
+            bResults = WinHttpReceiveResponse(hRequest, NULL);
+        }
+        
+        if (bResults) {
+            DWORD dwSize = 0;
+            do {
+                dwSize = 0;
+                if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
+                
+                if (dwSize > 0) {
+                    std::vector<char> buffer(dwSize + 1, 0);
+                    DWORD dwDownloaded = 0;
+                    if (WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded)) {
+                        response.append(buffer.data(), dwDownloaded);
+                    }
+                }
+            } while (dwSize > 0);
+        }
+        
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        
+    } catch (...) {
+        if (hRequest) WinHttpCloseHandle(hRequest);
+        if (hConnect) WinHttpCloseHandle(hConnect);
+        if (hSession) WinHttpCloseHandle(hSession);
+    }
+    
+    return response;
+}
+
+json generate_ai_overview(const AzureOpenAIConfig& config,
+                          const std::string& query,
+                          int k,
+                          const json& search_results,
+                          Engine* engine) {
+    json response_json;
+    
+    // Check cache first if engine is provided
+    if (engine) {
+        std::string cache_key = engine->make_cache_key(query, k);
+        
+        std::lock_guard<std::mutex> lock(engine->mtx);
+        json cached = engine->get_ai_from_cache(cache_key);
+        
+        if (!cached.is_null() && cached.contains("from_cache")) {
+            std::cerr << "[ai_overview] Cache HIT for query: \"" << query << "\" k=" << k << "\n";
+            // Remove internal flag and add user-visible flag
+            cached.erase("from_cache");
+            cached["cached"] = true;
+            return cached;
+        }
+        
+        std::cerr << "[ai_overview] Cache MISS for query: \"" << query << "\" k=" << k << "\n";
+    }
+    
+    try {
         // Build the API path
-        // Format: /openai/deployments/{model}/chat/completions?api-version={version}
         std::string path = "/openai/deployments/" + config.model + 
                           "/chat/completions?api-version=" + config.api_version;
-        
-        // Create HTTPS client
-        httplib::Client client(endpoint);
-        client.set_connection_timeout(30, 0); // 30 seconds
-        client.set_read_timeout(60, 0);       // 60 seconds
         
         // Build the request body
         json request_body;
@@ -106,43 +209,33 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
         request_body["messages"].push_back(user_msg);
         
         // Set parameters
-        request_body["temperature"] = 0.7;
-        request_body["max_tokens"] = 1000;
-        request_body["top_p"] = 0.95;
-        request_body["frequency_penalty"] = 0;
-        request_body["presence_penalty"] = 0;
+        request_body["max_completion_tokens"] = 1000;
         
         std::string body_str = request_body.dump();
         
-        // Set headers
-        httplib::Headers headers = {
-            {"Content-Type", "application/json"},
-            {"api-key", config.api_key}
-        };
+        std::cerr << "[azure_openai] Calling Azure OpenAI at " << config.endpoint << path << "\n";
         
-        std::cerr << "[azure_openai] Calling Azure OpenAI at " << endpoint << path << "\n";
+        // Make the HTTPS POST request using WinHTTP
+        std::string response_body = make_https_post(config.endpoint, path, config.api_key, body_str);
         
-        // Make the POST request
-        auto res = client.Post(path, headers, body_str, "application/json");
-        
-        if (!res) {
+        if (response_body.empty()) {
             response_json["error"] = "Failed to connect to Azure OpenAI";
             response_json["success"] = false;
             std::cerr << "[azure_openai] Connection failed\n";
             return response_json;
         }
         
-        if (res->status != 200) {
+        // Parse the response
+        json api_response = json::parse(response_body);
+        
+        // Check for API errors
+        if (api_response.contains("error")) {
             response_json["error"] = "Azure OpenAI API error";
-            response_json["status_code"] = res->status;
-            response_json["details"] = res->body;
+            response_json["details"] = api_response["error"];
             response_json["success"] = false;
-            std::cerr << "[azure_openai] API error: " << res->status << " - " << res->body << "\n";
+            std::cerr << "[azure_openai] API error: " << api_response.dump() << "\n";
             return response_json;
         }
-        
-        // Parse the response
-        json api_response = json::parse(res->body);
         
         // Extract the AI overview from the response
         if (api_response.contains("choices") && 
@@ -156,6 +249,7 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
                 response_json["success"] = true;
                 response_json["overview"] = choice["message"]["content"];
                 response_json["model"] = config.model;
+                response_json["cached"] = false;
                 
                 // Include token usage if available
                 if (api_response.contains("usage")) {
@@ -163,6 +257,14 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
                 }
                 
                 std::cerr << "[azure_openai] Successfully generated AI overview\n";
+                
+                // Cache the successful response if engine is provided
+                if (engine) {
+                    std::string cache_key = engine->make_cache_key(query, k);
+                    std::lock_guard<std::mutex> lock(engine->mtx);
+                    engine->put_ai_in_cache(cache_key, response_json);
+                    std::cerr << "[ai_overview] Cached AI overview for query: \"" << query << "\" k=" << k << "\n";
+                }
             } else {
                 response_json["error"] = "Unexpected response structure";
                 response_json["success"] = false;
