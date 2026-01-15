@@ -154,6 +154,57 @@ json Engine::suggest(const std::string& user_input, int limit) {
     return out;
 }
 
+// Helper to create cache key from query and k
+std::string Engine::make_cache_key(const std::string& query, int k) {
+    return query + "|" + std::to_string(k);
+}
+
+// Get result from cache if available, update LRU
+json Engine::get_from_cache(const std::string& cache_key) {
+    auto it = cache.find(cache_key);
+    if (it == cache.end()) {
+        return json(); // empty json means not found
+    }
+    
+    // Move to front of LRU list (most recently used)
+    lru_list.erase(it->second.lru_iter);
+    lru_list.push_front(cache_key);
+    it->second.lru_iter = lru_list.begin();
+    
+    // Return a copy of cached result
+    json result = it->second.result;
+    result["from_cache"] = true;
+    return result;
+}
+
+// Put result in cache with LRU eviction
+void Engine::put_in_cache(const std::string& cache_key, const json& result) {
+    // Check if already in cache (shouldn't happen, but handle it)
+    auto it = cache.find(cache_key);
+    if (it != cache.end()) {
+        // Update existing entry
+        lru_list.erase(it->second.lru_iter);
+        lru_list.push_front(cache_key);
+        it->second.result = result;
+        it->second.lru_iter = lru_list.begin();
+        return;
+    }
+    
+    // Evict least recently used entry if cache is full
+    if (cache.size() >= MAX_CACHE_SIZE) {
+        std::string lru_key = lru_list.back();
+        lru_list.pop_back();
+        cache.erase(lru_key);
+    }
+    
+    // Add new entry
+    lru_list.push_front(cache_key);
+    CacheEntry entry;
+    entry.result = result;
+    entry.lru_iter = lru_list.begin();
+    cache[cache_key] = entry;
+}
+
 // Run BM25 search with optional semantic expansion and return JSON results
 json Engine::search(const std::string& query, int k) {
 
@@ -164,6 +215,14 @@ json Engine::search(const std::string& query, int k) {
     const float k1 = 1.2f;
     const float b = 0.75f;
     const int K = std::max(1, std::min(k, 100));
+    
+    // Check cache first
+    std::string cache_key = make_cache_key(query, K);
+    json cached = get_from_cache(cache_key);
+    if (!cached.is_null()) {
+        // Return cached result with from_cache flag
+        return cached;
+    }
 
     // Tokenize the query string
     auto qtoks = tokenize(query);
@@ -310,6 +369,9 @@ json Engine::search(const std::string& query, int k) {
 
         out["results"].push_back(r);
     }
+    
+    // Store result in cache before returning
+    put_in_cache(cache_key, out);
 
     return out;
 }

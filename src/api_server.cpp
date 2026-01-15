@@ -98,15 +98,37 @@ int main(int argc, char** argv) {
 
         double search_ms =
             std::chrono::duration<double, std::milli>(search_t1 - search_t0).count();
-        j["search_time_ms"] = search_ms;
-
-        auto total_t1 = clock::now();
-        double total_ms =
-            std::chrono::duration<double, std::milli>(total_t1 - total_t0).count();
-        j["total_time_ms"] = total_ms;
-
-        std::cerr << "[search] q=\"" << q << "\" k=" << k
-                  << " search=" << search_ms << "ms total=" << total_ms << "ms\n";
+        
+        // Check if result was from cache
+        bool from_cache = j.contains("from_cache") && j["from_cache"] == true;
+        
+        if (from_cache) {
+            // For cached results: search_time_ms = 0, cache lookup time added to total
+            j["search_time_ms"] = 0.0;
+            j["cache_lookup_ms"] = search_ms;
+            
+            auto total_t1 = clock::now();
+            double total_ms =
+                std::chrono::duration<double, std::milli>(total_t1 - total_t0).count();
+            j["total_time_ms"] = total_ms;
+            j["cached"] = true;
+            j.erase("from_cache"); // Remove internal flag
+            
+            std::cerr << "[search] q=\"" << q << "\" k=" << k
+                      << " CACHED cache_lookup=" << search_ms << "ms total=" << total_ms << "ms\n";
+        } else {
+            // For new searches: set search time and total time
+            j["search_time_ms"] = search_ms;
+            
+            auto total_t1 = clock::now();
+            double total_ms =
+                std::chrono::duration<double, std::milli>(total_t1 - total_t0).count();
+            j["total_time_ms"] = total_ms;
+            j["cached"] = false;
+            
+            std::cerr << "[search] q=\"" << q << "\" k=" << k
+                      << " search=" << search_ms << "ms total=" << total_ms << "ms\n";
+        }
 
         res.set_content(j.dump(2), "application/json");
     });
