@@ -1,5 +1,6 @@
 #include "api_ai_overview.hpp"
 #include "api_engine.hpp"
+#include "api_stats.hpp"
 #include <iostream>
 #include <sstream>
 #include <windows.h>
@@ -166,8 +167,14 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
                           const std::string& query,
                           int k,
                           const json& search_results,
-                          Engine* engine) {
+                          Engine* engine,
+                          StatsTracker* stats) {
     json response_json;
+    
+    // Track AI overview call
+    if (stats) {
+        stats->increment_ai_overview_calls();
+    }
     
     // Check cache first if engine is provided
     if (engine) {
@@ -178,6 +185,12 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
         
         if (!cached.is_null() && cached.contains("from_cache")) {
             std::cerr << "[ai_overview] Cache HIT for query: \"" << query << "\" k=" << k << "\n";
+            
+            // Track cache hit
+            if (stats) {
+                stats->increment_ai_overview_cache_hits();
+            }
+            
             // Remove internal flag and add user-visible flag
             cached.erase("from_cache");
             cached["cached"] = true;
@@ -214,6 +227,11 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
         std::string body_str = request_body.dump();
         
         std::cerr << "[azure_openai] Calling Azure OpenAI at " << config.endpoint << path << "\n";
+        
+        // Decrement AI API calls remaining (actual API call being made)
+        if (stats) {
+            stats->decrement_ai_api_calls();
+        }
         
         // Make the HTTPS POST request using WinHTTP
         std::string response_body = make_https_post(config.endpoint, path, config.api_key, body_str);

@@ -35,6 +35,31 @@ target_include_directories(lexicon PRIVATE ${INCLUDE_DIR} ${CMAKE_SOURCE_DIR})
 target_include_directories(adddocument PRIVATE ${INCLUDE_DIR} ${CMAKE_SOURCE_DIR})
 target_include_directories(api_server PRIVATE ${INCLUDE_DIR} ${CMAKE_SOURCE_DIR})
 
+# Find OpenSSL for JWT authentication (REQUIRED)
+# Set OpenSSL paths for MinGW with MSYS2
+if(WIN32 AND MINGW)
+  set(OPENSSL_ROOT "C:/msys64/mingw64")
+  set(OPENSSL_INCLUDE "${OPENSSL_ROOT}/include")
+  set(OPENSSL_LIB_DIR "${OPENSSL_ROOT}/lib")
+  
+  if(EXISTS "${OPENSSL_INCLUDE}/openssl/ssl.h")
+    message(STATUS "OpenSSL found at ${OPENSSL_ROOT}")
+    target_include_directories(api_server PRIVATE "${OPENSSL_INCLUDE}")
+    target_link_libraries(api_server PRIVATE 
+      "${OPENSSL_LIB_DIR}/libssl.dll.a"
+      "${OPENSSL_LIB_DIR}/libcrypto.dll.a")
+    target_compile_definitions(api_server PRIVATE NEXTSEARCH_HAVE_OPENSSL)
+    message(STATUS "Admin authentication enabled")
+  else()
+    message(FATAL_ERROR "OpenSSL not found. Please install via MSYS2: pacman -S mingw-w64-x86_64-openssl")
+  endif()
+else()
+  find_package(OpenSSL REQUIRED)
+  target_link_libraries(api_server PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+  target_compile_definitions(api_server PRIVATE NEXTSEARCH_HAVE_OPENSSL)
+  message(STATUS "OpenSSL found - Admin authentication enabled")
+endif()
+
 # Windows-only compile flags and libraries
 if (WIN32)
   target_compile_definitions(api_server PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00 CPPHTTPLIB_NO_MMAP)

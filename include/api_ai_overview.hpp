@@ -7,8 +7,9 @@ namespace cord19 {
 
 using json = nlohmann::json;
 
-// Forward declaration
+// Forward declarations
 struct Engine;
+class StatsTracker;
 
 // Configuration for Azure OpenAI service
 struct AzureOpenAIConfig {
@@ -25,6 +26,7 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
                           const std::string& query,
                           int k,
                           const json& search_results,
-                          Engine* engine);
+                          Engine* engine,
+                          StatsTracker* stats = nullptr);
 
 } // namespace cord19

@@ -5,11 +5,13 @@
 #include <thread>
 
 #include "api_add_document.hpp"
+#include "api_admin.hpp"
 #include "api_ai_overview.hpp"
 #include "api_ai_summary.hpp"
 #include "api_engine.hpp"
 #include "api_feedback.hpp"
 #include "api_http.hpp"
+#include "api_stats.hpp"
 #include "env_loader.hpp"
 #include "third_party/httplib.h"
 
@@ -40,6 +42,34 @@ int main(int argc, char** argv) {
     azure_config.endpoint = env_vars["AZURE_OPENAI_ENDPOINT"];
     azure_config.api_key = env_vars["AZURE_OPENAI_API_KEY"];
     azure_config.model = env_vars["AZURE_OPENAI_MODEL"];
+    
+    // Initialize stats tracker
+    cord19::StatsTracker stats_tracker;
+    
+    // Load AI API limit from .env (default: 10,000)
+    if (!env_vars["AI_API_CALLS_LIMIT"].empty()) {
+        int64_t limit = std::stoll(env_vars["AI_API_CALLS_LIMIT"]);
+        stats_tracker.set_ai_api_calls_limit(limit);
+        std::cout << "[stats] AI API calls limit set to: " << limit << "\n";
+    } else {
+        std::cout << "[stats] AI API calls limit: 10,000 (default)\n";
+    }
+    
+    // Load admin configuration
+    std::string admin_password = env_vars["ADMIN_PASSWORD"];
+    std::string jwt_secret = env_vars["JWT_SECRET"];
+    int jwt_expiration = 3600; // Default 1 hour
+    if (!env_vars["JWT_EXPIRATION"].empty()) {
+        jwt_expiration = std::stoi(env_vars["JWT_EXPIRATION"]);
+    }
+    
+    // Validate admin configuration
+    bool admin_enabled = !admin_password.empty() && !jwt_secret.empty();
+    if (!admin_enabled) {
+        std::cerr << "[warning] Admin authentication not configured. Set ADMIN_PASSWORD and JWT_SECRET in .env file to enable protected endpoints.\n";
+    } else {
+        std::cout << "[admin] Admin authentication enabled with JWT expiration: " << jwt_expiration << "s\n";
+    }
     
     // Validate Azure configuration
     bool azure_enabled = !azure_config.endpoint.empty() && 
@@ -94,6 +124,123 @@ int main(int argc, char** argv) {
 
     // ---- API routes only ----
 
+    // Admin authentication endpoints
+    svr.Post("/api/admin/login", [&](const httplib::Request& req, httplib::Response& res) {
+        cord19::enable_cors(res);
+        
+        if (!admin_enabled) {
+            res.status = 503;
+            json err;
+            err["error"] = "Admin authentication not configured";
+            res.set_content(err.dump(2), "application/json");
+            return;
+        }
+        
+        // Parse request body
+        json req_body;
+        try {
+            req_body = json::parse(req.body);
+        } catch (const std::exception& e) {
+            res.status = 400;
+            json err;
+            err["error"] = "Invalid JSON request body";
+            res.set_content(err.dump(2), "application/json");
+            return;
+        }
+        
+        // Check for password field
+        if (!req_body.contains("password")) {
+            res.status = 400;
+            json err;
+            err["error"] = "Password is required";
+            res.set_content(err.dump(2), "application/json");
+            return;
+        }
+        
+        std::string password = req_body["password"];
+        
+        // Validate password
+        if (password != admin_password) {
+            res.status = 401;
+            json err;
+            err["error"] = "Invalid admin password";
+            res.set_content(err.dump(2), "application/json");
+            std::cerr << "[admin] Failed login attempt\n";
+            return;
+        }
+        
+        // Generate JWT token
+        std::string token = cord19::generate_jwt_token(jwt_secret, jwt_expiration);
+        
+        json response;
+        response["token"] = token;
+        response["expires_in"] = jwt_expiration;
+        
+        res.set_content(response.dump(2), "application/json");
+        std::cerr << "[admin] Successful login, token issued\n";
+    });
+
+    svr.Post("/api/admin/logout", [&](const httplib::Request& req, httplib::Response& res) {
+        cord19::enable_cors(res);
+        
+        // Simple logout - frontend will clear token
+        // Optional: implement token blacklisting here
+        json response;
+        response["message"] = "Logged out successfully";
+        res.set_content(response.dump(2), "application/json");
+    });
+
+    svr.Get("/api/admin/verify", [&](const httplib::Request& req, httplib::Response& res) {
+        cord19::enable_cors(res);
+        
+        if (!admin_enabled) {
+            res.status = 401;
+            json err;
+            err["valid"] = false;
+            res.set_content(err.dump(2), "application/json");
+            return;
+        }
+        
+        // Get Authorization header
+        if (!req.has_header("Authorization")) {
+            res.status = 401;
+            json err;
+            err["valid"] = false;
+            res.set_content(err.dump(2), "application/json");
+            return;
+        }
+        
+        std::string auth_header = req.get_header_value("Authorization");
+        std::string token = cord19::extract_bearer_token(auth_header);
+        
+        if (token.empty()) {
+            res.status = 401;
+            json err;
+            err["valid"] = false;
+            res.set_content(err.dump(2), "application/json");
+            return;
+        }
+        
+        // Validate token
+        auto validation_result = cord19::validate_jwt_token(token, jwt_secret);
+        
+        if (!validation_result.valid) {
+            res.status = 401;
+            json err;
+            err["valid"] = false;
+            res.set_content(err.dump(2), "application/json");
+            return;
+        }
+        
+        // Token is valid - return expiration time
+        json response;
+        response["valid"] = true;
+        int64_t exp = validation_result.payload["exp"];
+        response["expires_at"] = exp * 1000; // Convert to milliseconds
+        
+        res.set_content(response.dump(2), "application/json");
+    });
+
     svr.Get("/api/health", [&](const httplib::Request&, httplib::Response& res) {
         cord19::enable_cors(res);
         json j;
@@ -127,6 +274,12 @@ int main(int argc, char** argv) {
         
         // Check if result was from cache
         bool from_cache = j.contains("from_cache") && j["from_cache"] == true;
+        
+        // Track search stats
+        stats_tracker.increment_searches();
+        if (from_cache) {
+            stats_tracker.increment_search_cache_hits();
+        }
         
         if (from_cache) {
             // For cached results: search_time_ms = 0, cache lookup time added to total
@@ -178,9 +331,13 @@ int main(int argc, char** argv) {
 
     svr.Post("/api/add_document",
              [&](const httplib::Request& req, httplib::Response& res, const httplib::ContentReader& cr) {
-                 // If handle_add_document doesn't set CORS itself, ensure it's enabled.
-                 // (Leaving it here is harmless even if it does.)
                  cord19::enable_cors(res);
+                 
+                 // Require admin authentication
+                 if (admin_enabled && !cord19::require_admin_auth(req, res, jwt_secret)) {
+                     return; // Error response already set by require_admin_auth
+                 }
+                 
                  cord19::handle_add_document(engine, req, res, cr);
              });
 
@@ -195,6 +352,11 @@ int main(int argc, char** argv) {
 
     svr.Get("/api/ai_overview", [&](const httplib::Request& req, httplib::Response& res) {
         cord19::enable_cors(res);
+        
+        // Require admin authentication
+        if (admin_enabled && !cord19::require_admin_auth(req, res, jwt_secret)) {
+            return; // Error response already set by require_admin_auth
+        }
         
         // Check if Azure OpenAI is configured
         if (!azure_enabled) {
@@ -263,7 +425,7 @@ int main(int argc, char** argv) {
         }
         
         // Generate AI overview using Azure OpenAI with caching
-        auto ai_response = cord19::generate_ai_overview(azure_config, query, k, search_results, &engine);
+        auto ai_response = cord19::generate_ai_overview(azure_config, query, k, search_results, &engine, &stats_tracker);
         
         // Prepare minimal response (no search results, just AI overview)
         json response;
@@ -289,6 +451,11 @@ int main(int argc, char** argv) {
     svr.Get("/api/ai_summary", [&](const httplib::Request& req, httplib::Response& res) {
         cord19::enable_cors(res);
         
+        // Require admin authentication
+        if (admin_enabled && !cord19::require_admin_auth(req, res, jwt_secret)) {
+            return; // Error response already set by require_admin_auth
+        }
+        
         // Check if Azure OpenAI is configured
         if (!azure_enabled) {
             res.status = 503;
@@ -312,7 +479,7 @@ int main(int argc, char** argv) {
         std::cerr << "[ai_summary] Processing cord_uid: \"" << cord_uid << "\"\n";
         
         // Generate AI summary using Azure OpenAI with caching
-        auto ai_response = cord19::generate_ai_summary(azure_config, cord_uid, &engine);
+        auto ai_response = cord19::generate_ai_summary(azure_config, cord_uid, &engine, &stats_tracker);
         
         // Return the response (contains only cord_uid and summary)
         if (ai_response.contains("success") && ai_response["success"] == true) {
@@ -337,6 +504,20 @@ int main(int argc, char** argv) {
 
     svr.Post("/api/feedback", [&](const httplib::Request& req, httplib::Response& res) {
         cord19::handle_feedback(feedback_manager, req, res);
+    });
+
+    svr.Get("/api/stats", [&](const httplib::Request& req, httplib::Response& res) {
+        cord19::enable_cors(res);
+        
+        // Require admin authentication
+        if (admin_enabled && !cord19::require_admin_auth(req, res, jwt_secret)) {
+            return; // Error response already set by require_admin_auth
+        }
+        
+        // Get comprehensive stats from tracker
+        json stats = stats_tracker.get_stats_json(feedback_manager);
+        
+        res.set_content(stats.dump(2), "application/json");
     });
 
     std::cout << "API running on http://127.0.0.1:" << port << "\n";

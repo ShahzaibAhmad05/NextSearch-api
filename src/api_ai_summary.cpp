@@ -1,6 +1,7 @@
 #include "api_ai_summary.hpp"
 #include "api_ai_overview.hpp"
 #include "api_engine.hpp"
+#include "api_stats.hpp"
 #include <iostream>
 #include <sstream>
 #include <windows.h>
@@ -132,8 +133,14 @@ static std::string make_https_post_summary(const std::string& url, const std::st
 
 json generate_ai_summary(const AzureOpenAIConfig& config,
                          const std::string& cord_uid,
-                         Engine* engine) {
+                         Engine* engine,
+                         StatsTracker* stats) {
     json response_json;
+    
+    // Track AI summary call
+    if (stats) {
+        stats->increment_ai_summary_calls();
+    }
     
     // Check cache first if engine is provided
     if (engine) {
@@ -144,6 +151,12 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
         
         if (!cached.is_null() && cached.contains("from_cache")) {
             std::cerr << "[ai_summary] Cache HIT for cord_uid: \"" << cord_uid << "\"\n";
+            
+            // Track cache hit
+            if (stats) {
+                stats->increment_ai_summary_cache_hits();
+            }
+            
             // Remove internal flag and add user-visible flag
             cached.erase("from_cache");
             cached["cached"] = true;
@@ -200,6 +213,11 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
         std::string body_str = request_body.dump();
         
         std::cerr << "[azure_openai] Calling Azure OpenAI for summary at " << config.endpoint << path << "\n";
+        
+        // Decrement AI API calls remaining (actual API call being made)
+        if (stats) {
+            stats->decrement_ai_api_calls();
+        }
         
         // Make the HTTPS POST request using WinHTTP
         std::string response_body = make_https_post_summary(config.endpoint, path, config.api_key, body_str);
