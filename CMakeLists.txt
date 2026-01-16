@@ -48,7 +48,7 @@ if(WIN32 AND MINGW)
     target_link_libraries(api_server PRIVATE 
       "${OPENSSL_LIB_DIR}/libssl.dll.a"
       "${OPENSSL_LIB_DIR}/libcrypto.dll.a")
-    target_compile_definitions(api_server PRIVATE NEXTSEARCH_HAVE_OPENSSL)
+    target_compile_definitions(api_server PRIVATE NEXTSEARCH_HAVE_OPENSSL CPPHTTPLIB_OPENSSL_SUPPORT)
     message(STATUS "Admin authentication enabled")
   else()
     message(FATAL_ERROR "OpenSSL not found. Please install via MSYS2: pacman -S mingw-w64-x86_64-openssl")
@@ -56,12 +56,12 @@ if(WIN32 AND MINGW)
 else()
   find_package(OpenSSL REQUIRED)
   target_link_libraries(api_server PRIVATE OpenSSL::SSL OpenSSL::Crypto)
-  target_compile_definitions(api_server PRIVATE NEXTSEARCH_HAVE_OPENSSL)
+  target_compile_definitions(api_server PRIVATE NEXTSEARCH_HAVE_OPENSSL CPPHTTPLIB_OPENSSL_SUPPORT)
   message(STATUS "OpenSSL found - Admin authentication enabled")
 endif()
 
 # Windows-only compile flags and libraries
 if (WIN32)
   target_compile_definitions(api_server PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00 CPPHTTPLIB_NO_MMAP)
-  target_link_libraries(api_server PRIVATE ws2_32 iphlpapi winhttp)
+  target_link_libraries(api_server PRIVATE ws2_32 iphlpapi winhttp crypt32)
 endif()

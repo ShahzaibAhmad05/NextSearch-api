@@ -1,12 +1,9 @@
 #include "api_ai_overview.hpp"
 #include "api_engine.hpp"
 #include "api_stats.hpp"
+#include "third_party/httplib.h"
 #include <iostream>
 #include <sstream>
-#include <windows.h>
-#include <winhttp.h>
-
-#pragma comment(lib, "winhttp.lib")
 
 namespace cord19 {
 
@@ -76,12 +73,9 @@ static std::string build_user_prompt(const std::string& query, const json& searc
     return oss.str();
 }
 
-// Helper function to make HTTPS POST request using WinHTTP
+// Helper function to make HTTPS POST request using httplib (cross-platform)
 static std::string make_https_post(const std::string& url, const std::string& path, 
                                    const std::string& api_key, const std::string& body) {
-    HINTERNET hSession = NULL, hConnect = NULL, hRequest = NULL;
-    std::string response;
-    
     try {
         // Parse URL to extract host
         std::string host = url;
@@ -92,80 +86,36 @@ static std::string make_https_post(const std::string& url, const std::string& pa
             host.pop_back();
         }
         
-        // Convert to wide strings
-        std::wstring whost(host.begin(), host.end());
-        std::wstring wpath(path.begin(), path.end());
-        
-        // Initialize WinHTTP
-        hSession = WinHttpOpen(L"AzureOpenAI/1.0",
-                              WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
-                              WINHTTP_NO_PROXY_NAME,
-                              WINHTTP_NO_PROXY_BYPASS, 0);
-        
-        if (!hSession) return "";
-        
-        hConnect = WinHttpConnect(hSession, whost.c_str(), INTERNET_DEFAULT_HTTPS_PORT, 0);
-        if (!hConnect) {
-            WinHttpCloseHandle(hSession);
-            return "";
-        }
-        
-        hRequest = WinHttpOpenRequest(hConnect, L"POST", wpath.c_str(),
-                                     NULL, WINHTTP_NO_REFERER,
-                                     WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                     WINHTTP_FLAG_SECURE);
-        
-        if (!hRequest) {
-            WinHttpCloseHandle(hConnect);
-            WinHttpCloseHandle(hSession);
-            return "";
-        }
+        // Create HTTPS client
+        httplib::SSLClient cli(host);
+        cli.set_connection_timeout(30, 0); // 30 seconds
+        cli.set_read_timeout(60, 0);       // 60 seconds
+        cli.set_write_timeout(60, 0);      // 60 seconds
         
         // Set headers
-        std::string headers_str = "Content-Type: application/json\r\n";
-        headers_str += "api-key: " + api_key + "\r\n";
-        std::wstring wheaders(headers_str.begin(), headers_str.end());
+        httplib::Headers headers = {
+            {"Content-Type", "application/json"},
+            {"api-key", api_key}
+        };
         
-        // Send request
-        BOOL bResults = WinHttpSendRequest(hRequest,
-                                          wheaders.c_str(),
-                                          (DWORD)-1,
-                                          (LPVOID)body.c_str(),
-                                          (DWORD)body.length(),
-                                          (DWORD)body.length(),
-                                          0);
+        // Make POST request
+        auto res = cli.Post(path.c_str(), headers, body, "application/json");
         
-        if (bResults) {
-            bResults = WinHttpReceiveResponse(hRequest, NULL);
+        if (res && res->status == 200) {
+            return res->body;
+        } else {
+            std::cerr << "[https_post] Request failed";
+            if (res) {
+                std::cerr << " - Status: " << res->status;
+            }
+            std::cerr << "\n";
+            return "";
         }
         
-        if (bResults) {
-            DWORD dwSize = 0;
-            do {
-                dwSize = 0;
-                if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
-                
-                if (dwSize > 0) {
-                    std::vector<char> buffer(dwSize + 1, 0);
-                    DWORD dwDownloaded = 0;
-                    if (WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded)) {
-                        response.append(buffer.data(), dwDownloaded);
-                    }
-                }
-            } while (dwSize > 0);
-        }
-        
-        WinHttpCloseHandle(hRequest);
-        WinHttpCloseHandle(hConnect);
-        WinHttpCloseHandle(hSession);
-        
-    } catch (...) {
-        if (hRequest) WinHttpCloseHandle(hRequest);
-        if (hConnect) WinHttpCloseHandle(hConnect);
-        if (hSession) WinHttpCloseHandle(hSession);
+    } catch (const std::exception& e) {
+        std::cerr << "[https_post] Exception: " << e.what() << "\n";
+        return "";
     }
-    
-    return response;
 }
 
 json generate_ai_overview(const AzureOpenAIConfig& config,
