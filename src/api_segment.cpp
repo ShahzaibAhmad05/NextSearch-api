@@ -121,11 +121,11 @@ bool load_segment(const fs::path& segdir, Segment& s) {
         uint32_t n = read_u32(in);
         s.docs.resize(n);
 
-        // Read per-doc fields
+        // Read per-doc fields (only cord_uid and doc_len are used)
         for (uint32_t i = 0; i < n; i++) {
             s.docs[i].cord_uid = read_string(in);
-            s.docs[i].title = read_string(in);
-            s.docs[i].json_relpath = read_string(in);
+            read_string(in);  // Skip title (available in metadata.csv)
+            read_string(in);  // Skip json_relpath (available in metadata.csv)
             s.docs[i].doc_len = read_u32(in);
         }
     }

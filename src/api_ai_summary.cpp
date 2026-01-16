@@ -146,7 +146,7 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
         std::string cache_key = "summary|" + cord_uid;
         
         std::lock_guard<std::mutex> lock(engine->mtx);
-        json cached = engine->get_ai_from_cache(cache_key);
+        json cached = engine->get_ai_summary_from_cache(cache_key);
         
         if (!cached.is_null() && cached.contains("from_cache")) {
             std::cerr << "[ai_summary] Cache HIT for cord_uid: \"" << cord_uid << "\"\n";
@@ -273,7 +273,7 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
                 if (engine) {
                     std::string cache_key = "summary|" + cord_uid;
                     std::lock_guard<std::mutex> lock(engine->mtx);
-                    engine->put_ai_in_cache(cache_key, response_json);
+                    engine->put_ai_summary_in_cache(cache_key, response_json);
                     std::cerr << "[ai_summary] Cached AI summary for cord_uid: \"" << cord_uid << "\"\n";
                 }
             } else {

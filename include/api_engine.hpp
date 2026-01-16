@@ -45,18 +45,27 @@ struct Engine {
 
     // AI overview cache: stores up to 500 AI overviews with LRU eviction and 24hr expiry
     // Key format: "query|k" (e.g., "covid|10") - same as search cache
-    std::unordered_map<std::string, CacheEntry> ai_cache;
-    std::list<std::string> ai_lru_list; // Most recently used at front
-    static constexpr size_t MAX_AI_CACHE_SIZE = 500;
-    static constexpr std::chrono::hours AI_CACHE_EXPIRY_DURATION{24};
+    std::unordered_map<std::string, CacheEntry> ai_overview_cache;
+    std::list<std::string> ai_overview_lru_list; // Most recently used at front
+    static constexpr size_t MAX_AI_OVERVIEW_CACHE_SIZE = 500;
+    static constexpr std::chrono::hours AI_OVERVIEW_CACHE_EXPIRY_DURATION{24};
+
+    // AI summary cache: stores up to 1000 AI summaries with LRU eviction and 24hr expiry
+    // Key format: "summary|cord_uid" (e.g., "summary|abc123")
+    std::unordered_map<std::string, CacheEntry> ai_summary_cache;
+    std::list<std::string> ai_summary_lru_list; // Most recently used at front
+    static constexpr size_t MAX_AI_SUMMARY_CACHE_SIZE = 1000;
+    static constexpr std::chrono::hours AI_SUMMARY_CACHE_EXPIRY_DURATION{24};
 
     // Cache persistence counters (save to disk every N updates)
     size_t cache_updates_since_save = 0;
-    size_t ai_cache_updates_since_save = 0;
-    static constexpr size_t CACHE_SAVE_INTERVAL = 10; // Save every 10 updates
+    size_t ai_overview_cache_updates_since_save = 0;
+    size_t ai_summary_cache_updates_since_save = 0;
+    static constexpr size_t CACHE_SAVE_INTERVAL = 1; // Save every update for immediate persistence
 
     std::mutex mtx;
 
+    ~Engine(); // Destructor to save caches on shutdown
     bool reload();
     json search(const std::string& query, int k);
     json suggest(const std::string& user_input, int limit);
@@ -65,14 +74,20 @@ struct Engine {
     std::string make_cache_key(const std::string& query, int k);
     
     // AI overview cache helpers (public for use by ai_overview module)
-    json get_ai_from_cache(const std::string& cache_key);
-    void put_ai_in_cache(const std::string& cache_key, const json& result);
+    json get_ai_overview_from_cache(const std::string& cache_key);
+    void put_ai_overview_in_cache(const std::string& cache_key, const json& result);
+    
+    // AI summary cache helpers (public for use by ai_summary module)
+    json get_ai_summary_from_cache(const std::string& cache_key);
+    void put_ai_summary_in_cache(const std::string& cache_key, const json& result);
     
     // Cache persistence (save/load to JSON files)
     void save_cache();
     void load_cache();
-    void save_ai_cache();
-    void load_ai_cache();
+    void save_ai_overview_cache();
+    void load_ai_overview_cache();
+    void save_ai_summary_cache();
+    void load_ai_summary_cache();
     
 private:
     json get_from_cache(const std::string& cache_key);

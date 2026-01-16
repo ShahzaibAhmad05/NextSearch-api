@@ -187,7 +187,7 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
         std::string cache_key = engine->make_cache_key(query, k);
         
         std::lock_guard<std::mutex> lock(engine->mtx);
-        json cached = engine->get_ai_from_cache(cache_key);
+        json cached = engine->get_ai_overview_from_cache(cache_key);
         
         if (!cached.is_null() && cached.contains("from_cache")) {
             std::cerr << "[ai_overview] Cache HIT for query: \"" << query << "\" k=" << k << "\n";
@@ -289,7 +289,7 @@ json generate_ai_overview(const AzureOpenAIConfig& config,
                 if (engine) {
                     std::string cache_key = engine->make_cache_key(query, k);
                     std::lock_guard<std::mutex> lock(engine->mtx);
-                    engine->put_ai_in_cache(cache_key, response_json);
+                    engine->put_ai_overview_in_cache(cache_key, response_json);
                     std::cerr << "[ai_overview] Cached AI overview for query: \"" << query << "\" k=" << k << "\n";
                 }
             } else {

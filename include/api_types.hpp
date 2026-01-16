@@ -16,10 +16,8 @@ namespace fs = std::filesystem;
 using json = nlohmann::json;
 
 struct DocInfo {
-    std::string cord_uid;
-    std::string title;
-    std::string json_relpath;
-    uint32_t doc_len = 0;
+    std::string cord_uid;  // Kept for matching with metadata index
+    uint32_t doc_len = 0;  // Needed for BM25 scoring
 };
 
 struct LexEntry {
