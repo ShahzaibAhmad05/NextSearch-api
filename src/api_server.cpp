@@ -1,5 +1,4 @@
 #include <chrono>
-#include <csignal>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -19,23 +18,6 @@
 using cord19::Engine;
 using cord19::json;
 
-// Global engine pointer for signal handler
-static Engine* g_engine = nullptr;
-
-// Signal handler for graceful shutdown (saves caches)
-void signal_handler(int signal) {
-    std::cerr << "\n[shutdown] Received signal " << signal << ", saving all caches...\n";
-    if (g_engine) {
-        // Force save all three caches before exit
-        std::lock_guard<std::mutex> lock(g_engine->mtx);
-        g_engine->save_cache();
-        g_engine->save_ai_overview_cache();
-        g_engine->save_ai_summary_cache();
-    }
-    std::cerr << "[shutdown] All caches saved. Exiting.\n";
-    std::exit(0);
-}
-
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "Usage: api_server <INDEX_DIR> [port]\n"
@@ -45,13 +27,6 @@ int main(int argc, char** argv) {
 
     Engine engine;
     engine.index_dir = std::filesystem::path(argv[1]);
-    
-    // Set global engine pointer for signal handler
-    g_engine = &engine;
-    
-    // Install signal handlers for graceful shutdown
-    std::signal(SIGINT, signal_handler);  // Ctrl+C
-    std::signal(SIGTERM, signal_handler); // Termination request
 
     int port = 8080;
     if (argc >= 3) port = std::stoi(argv[2]);
