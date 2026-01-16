@@ -294,3 +294,12 @@ GitHub: [https://github.com/ShahzaibAhmad05](https://github.com/ShahzaibAhmad05)
  If you found this project useful, **give it a star on GitHub!**
 
 
+
+
+Drastically reduced RAM usage at startup - instead of loading potentially gigabytes of abstracts, only ~16 bytes per document is stored (offset + length)
+Lazy loading - metadata is only fetched from disk when actually needed (search results, AI summaries)
+No functional changes - the API behavior remains identical from a user perspective
+
+Hash Map for O(1) Fast Indexing:
+
+std::unordered_map<std::string, MetaInfo> uid_to_meta - uses hash table for constant-time lookups by cord_uid

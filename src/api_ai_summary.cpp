@@ -1,6 +1,7 @@
 #include "api_ai_summary.hpp"
 #include "api_ai_overview.hpp"
 #include "api_engine.hpp"
+#include "api_metadata.hpp"
 #include "api_stats.hpp"
 #include <iostream>
 #include <sstream>
@@ -166,7 +167,7 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
     }
     
     try {
-        // Look up metadata for the cord_uid
+        // Look up metadata byte position for the cord_uid
         if (!engine || engine->uid_to_meta.find(cord_uid) == engine->uid_to_meta.end()) {
             response_json["error"] = "cord_uid not found in metadata";
             response_json["success"] = false;
@@ -175,7 +176,9 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
             return response_json;
         }
         
-        const auto& meta = engine->uid_to_meta.at(cord_uid);
+        // Fetch actual metadata on-demand from file
+        const auto& meta_info = engine->uid_to_meta.at(cord_uid);
+        MetaData meta = fetch_metadata(engine->metadata_csv_path, meta_info);
         
         // Check if abstract exists
         if (meta.abstract.empty()) {

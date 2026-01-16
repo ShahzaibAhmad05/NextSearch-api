@@ -84,7 +84,8 @@ bool Engine::reload() {
 
     // Reload metadata mapping from CSV
     uid_to_meta.clear();
-    load_metadata_uid_meta(index_dir / "metadata.csv", uid_to_meta);
+    metadata_csv_path = index_dir / "metadata.csv";
+    load_metadata_uid_meta(metadata_csv_path, uid_to_meta);
 
     // Reset semantic index and load embeddings if available
     sem = SemanticIndex();
@@ -496,13 +497,16 @@ json Engine::search(const std::string& query, int k) {
         // Attach metadata fields if available for this document
         auto it = uid_to_meta.find(d.cord_uid);
         if (it != uid_to_meta.end()) {
-            std::string url = it->second.url;
+            // Fetch metadata on-demand from file
+            MetaData meta = fetch_metadata(metadata_csv_path, it->second);
+            
+            std::string url = meta.url;
             auto semi = url.find(';');
             if (semi != std::string::npos) url = url.substr(0, semi);
             if (!url.empty()) r["url"] = url;
 
-            if (!it->second.publish_time.empty()) r["publish_time"] = it->second.publish_time;
-            if (!it->second.author.empty()) r["author"] = it->second.author;
+            if (!meta.publish_time.empty()) r["publish_time"] = meta.publish_time;
+            if (!meta.author.empty()) r["author"] = meta.author;
         }
 
         out["results"].push_back(r);

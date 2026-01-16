@@ -30,8 +30,14 @@ struct LexEntry {
     uint32_t barrelId = 0; // used only when barrels enabled
 };
 
-// store url + publish_time + authors + title + abstract per cord_uid
+// Store byte positions in metadata.csv file for on-demand loading
 struct MetaInfo {
+    uint64_t file_offset = 0;  // Byte position where this row starts in metadata.csv
+    uint32_t row_length = 0;   // Length of the row in bytes
+};
+
+// Full metadata loaded on-demand from file
+struct MetaData {
     std::string url;
     std::string publish_time; // "YYYY-MM-DD" string
     std::string author;       // display: "Smith et al."

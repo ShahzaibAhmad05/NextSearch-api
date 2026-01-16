@@ -105,90 +105,147 @@ static std::string first_author_et_al(const std::string& authors_raw) {
     return surname + " et al.";
 }
 
-// Load metadata CSV and map cord_uid to metadata info
+// Load metadata CSV byte positions and map cord_uid to file positions
 void load_metadata_uid_meta(const fs::path& metadata_csv,
                             std::unordered_map<std::string, MetaInfo>& uid_to_meta) {
 
     // Open metadata CSV file
-    std::ifstream in(metadata_csv);
+    std::ifstream in(metadata_csv, std::ios::binary);
     if (!in) {
         std::cerr << "[metadata] FAILED open: "
                   << metadata_csv.string() << "\n";
         return;
     }
 
-    // Read header line
+    // Read header line and track its position
     std::string header;
+    uint64_t current_pos = 0;
+    
     if (!std::getline(in, header)) {
         std::cerr << "[metadata] FAILED read header\n";
         return;
     }
+    
+    // Move past header (including newline)
+    current_pos = in.tellg();
 
     // Parse column names
     auto cols = csv_row(header);
-    int uid_i = -1, url_i = -1, pub_i = -1, auth_i = -1, title_i = -1, abstract_i = -1;
+    int uid_i = -1;
 
-    // Identify required column indexes
+    // Identify cord_uid column index
     for (int i = 0; i < (int)cols.size(); i++) {
         if (cols[i] == "cord_uid") uid_i = i;
-        if (cols[i] == "url") url_i = i;
-        if (cols[i] == "publish_time") pub_i = i;
-        if (cols[i] == "authors") auth_i = i;
-        if (cols[i] == "title") title_i = i;
-        if (cols[i] == "abstract") abstract_i = i;
     }
 
-    // Validate required columns
-    if (uid_i < 0 || url_i < 0 || pub_i < 0 || auth_i < 0) {
-        std::cerr << "[metadata] missing required columns in header\n";
+    // Validate required column
+    if (uid_i < 0) {
+        std::cerr << "[metadata] missing cord_uid column in header\n";
         return;
     }
 
     std::string line;
     size_t loaded = 0, bad = 0;
 
-    // Read metadata rows one by one
+    // Read metadata rows and store byte positions
     while (std::getline(in, line)) {
+        uint64_t line_start = current_pos;
+        uint32_t line_length = static_cast<uint32_t>(line.length() + 1); // +1 for newline
+        
         auto r = csv_row(line);
 
         // Skip malformed rows
-        if ((int)r.size() <= std::max({uid_i, url_i, pub_i, auth_i})) {
+        if ((int)r.size() <= uid_i) {
             bad++;
+            current_pos += line_length;
             continue;
         }
 
         auto uid = r[uid_i];
-        if (uid.empty()) continue;
+        if (uid.empty()) {
+            current_pos += line_length;
+            continue;
+        }
 
-        // Fetch or create metadata entry
-        auto& entry = uid_to_meta[uid];
-
-        // Fill fields only if empty (first non-empty wins)
-        if (entry.url.empty() && !r[url_i].empty())
-            entry.url = r[url_i];
-
-        if (entry.publish_time.empty() && !r[pub_i].empty())
-            entry.publish_time = r[pub_i];
-
-        // Convert authors string to "Surname et al."
-        if (entry.author.empty() && !r[auth_i].empty())
-            entry.author = first_author_et_al(r[auth_i]);
-
-        // Add title if available
-        if (title_i >= 0 && entry.title.empty() && (int)r.size() > title_i && !r[title_i].empty())
-            entry.title = r[title_i];
-
-        // Add abstract if available
-        if (abstract_i >= 0 && entry.abstract.empty() && (int)r.size() > abstract_i && !r[abstract_i].empty())
-            entry.abstract = r[abstract_i];
-
-        loaded++;
+        // Store byte position for this cord_uid (only first occurrence)
+        if (uid_to_meta.find(uid) == uid_to_meta.end()) {
+            MetaInfo& entry = uid_to_meta[uid];
+            entry.file_offset = line_start;
+            entry.row_length = line_length;
+            loaded++;
+        }
+        
+        current_pos += line_length;
     }
 
     // Print loading summary
     std::cerr << "[metadata] loaded=" << loaded
               << " bad_rows=" << bad
               << " map_size=" << uid_to_meta.size() << "\n";
+}
+
+// Fetch full metadata from file on-demand using stored byte position
+MetaData fetch_metadata(const fs::path& metadata_csv, const MetaInfo& meta_info) {
+    MetaData result;
+    
+    // Open file and seek to the stored position
+    std::ifstream in(metadata_csv, std::ios::binary);
+    if (!in) {
+        std::cerr << "[metadata] FAILED to open file for fetch: "
+                  << metadata_csv.string() << "\n";
+        return result;
+    }
+    
+    // Seek to the row position
+    in.seekg(meta_info.file_offset);
+    
+    // Read the row
+    std::string line;
+    if (!std::getline(in, line)) {
+        std::cerr << "[metadata] FAILED to read row at offset: "
+                  << meta_info.file_offset << "\n";
+        return result;
+    }
+    
+    // Parse the CSV row
+    auto r = csv_row(line);
+    
+    // Read header to get column indices (cache this in production for better performance)
+    in.seekg(0);
+    std::string header;
+    if (!std::getline(in, header)) {
+        std::cerr << "[metadata] FAILED to read header\n";
+        return result;
+    }
+    
+    auto cols = csv_row(header);
+    int url_i = -1, pub_i = -1, auth_i = -1, title_i = -1, abstract_i = -1;
+    
+    for (int i = 0; i < (int)cols.size(); i++) {
+        if (cols[i] == "url") url_i = i;
+        if (cols[i] == "publish_time") pub_i = i;
+        if (cols[i] == "authors") auth_i = i;
+        if (cols[i] == "title") title_i = i;
+        if (cols[i] == "abstract") abstract_i = i;
+    }
+    
+    // Extract fields
+    if (url_i >= 0 && (int)r.size() > url_i)
+        result.url = r[url_i];
+    
+    if (pub_i >= 0 && (int)r.size() > pub_i)
+        result.publish_time = r[pub_i];
+    
+    if (auth_i >= 0 && (int)r.size() > auth_i)
+        result.author = first_author_et_al(r[auth_i]);
+    
+    if (title_i >= 0 && (int)r.size() > title_i)
+        result.title = r[title_i];
+    
+    if (abstract_i >= 0 && (int)r.size() > abstract_i)
+        result.abstract = r[abstract_i];
+    
+    return result;
 }
 
 } // namespace cord19

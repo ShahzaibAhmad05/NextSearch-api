@@ -27,6 +27,7 @@ struct Engine {
     std::vector<Segment> segments;
 
     std::unordered_map<std::string, MetaInfo> uid_to_meta;
+    fs::path metadata_csv_path;  // Path to metadata.csv for on-demand reads
 
     // Autocomplete index built from the loaded lexicon.
     AutocompleteIndex ac;
