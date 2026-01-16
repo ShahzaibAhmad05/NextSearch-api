@@ -27,6 +27,7 @@ public:
         , ai_summary_calls_(0)
         , ai_summary_cache_hits_(0)
         , ai_api_calls_remaining_(10000) // Default: 10,000 API calls allowed
+        , ai_api_calls_used_(0)
     {
         // Load existing stats from file
         load_from_file();
@@ -73,6 +74,7 @@ public:
             // Try to atomically swap current with current-1
             // If another thread modified it, retry with new value
             if (ai_api_calls_remaining_.compare_exchange_weak(current, current - 1)) {
+                ai_api_calls_used_++; // Also track how many API calls have been used
                 save_to_file(); // Persist after successful decrement
                 return; // Success
             }
@@ -121,8 +123,9 @@ public:
         stats["ai_summary_cache_hit_rate"] = (ai_summary_total > 0) ? 
             (static_cast<double>(ai_summary_hits) / ai_summary_total) : 0.0;
         
-        // AI API calls remaining
+        // AI API calls remaining and used
         stats["ai_api_calls_remaining"] = ai_api_calls_remaining_.load();
+        stats["ai_api_calls_used"] = ai_api_calls_used_.load();
         
         // Last 10 feedback reviews
         json all_feedback = feedback_manager.get_all_feedback();
@@ -161,6 +164,7 @@ private:
     
     // AI API quota
     std::atomic<int64_t> ai_api_calls_remaining_;
+    std::atomic<int64_t> ai_api_calls_used_;
     
     // Load stats from file (called on initialization)
     void load_from_file() {
@@ -203,6 +207,9 @@ private:
             if (j.contains("ai_api_calls_remaining")) {
                 ai_api_calls_remaining_ = j["ai_api_calls_remaining"].get<int64_t>();
             }
+            if (j.contains("ai_api_calls_used")) {
+                ai_api_calls_used_ = j["ai_api_calls_used"].get<int64_t>();
+            }
             
             std::cout << "[stats] Loaded stats from file:\n";
             std::cout << "  - Total searches: " << total_searches_ << "\n";
@@ -226,6 +233,7 @@ private:
             j["ai_summary_calls"] = ai_summary_calls_.load();
             j["ai_summary_cache_hits"] = ai_summary_cache_hits_.load();
             j["ai_api_calls_remaining"] = ai_api_calls_remaining_.load();
+            j["ai_api_calls_used"] = ai_api_calls_used_.load();
             
             // Add timestamp
             auto now = std::chrono::system_clock::now();

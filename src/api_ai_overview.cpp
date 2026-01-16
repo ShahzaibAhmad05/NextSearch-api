@@ -15,13 +15,16 @@ static std::string build_system_prompt() {
     return R"(You are an AI assistant that generates short, informative overviews of search results in proper markdown format with headings and newline chars.
 
     Your task is to analyze the provided search results and create a comprehensive summary that:
+
     1. Answers the user's query directly
     2. Synthesizes information from multiple sources
     3. Highlights key findings and relevant details
     4. Maintains accuracy and avoids speculation
     5. Cites specific documents when appropriate
 
-    Keep your overview clear, factual, and helpful. Format it in proper markdown with appropriate headings wherever needed.)";
+    TO SUCCEED, FOLLOW THESE RULES:
+    - 
+    - Format it in proper markdown with appropriate headings wherever needed.)";
 }
 
 // Helper function to build the user prompt with search results

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <queue>
 #include <unordered_set>
@@ -125,6 +126,10 @@ bool Engine::reload() {
         }
     }
 
+    // Load caches from disk
+    load_cache();
+    load_ai_cache();
+
     // Reload successful
     return true;
 }
@@ -243,6 +248,13 @@ void Engine::put_in_cache(const std::string& cache_key, const json& result) {
     entry.lru_iter = lru_list.begin();
     entry.timestamp = now;
     cache[cache_key] = entry;
+    
+    // Periodically save cache to disk (every N updates)
+    cache_updates_since_save++;
+    if (cache_updates_since_save >= CACHE_SAVE_INTERVAL) {
+        save_cache();
+        cache_updates_since_save = 0;
+    }
 }
 
 // Get AI overview from cache if available and not expired, update LRU
@@ -322,6 +334,13 @@ void Engine::put_ai_in_cache(const std::string& cache_key, const json& result) {
     entry.lru_iter = ai_lru_list.begin();
     entry.timestamp = now;
     ai_cache[cache_key] = entry;
+    
+    // Periodically save AI cache to disk (every N updates)
+    ai_cache_updates_since_save++;
+    if (ai_cache_updates_since_save >= CACHE_SAVE_INTERVAL) {
+        save_ai_cache();
+        ai_cache_updates_since_save = 0;
+    }
 }
 
 // Run BM25 search with optional semantic expansion and return JSON results
@@ -493,6 +512,246 @@ json Engine::search(const std::string& query, int k) {
     put_in_cache(cache_key, out);
 
     return out;
+}
+
+// Save search cache to JSON file
+void Engine::save_cache() {
+    try {
+        json cache_json = json::array();
+        
+        // Serialize cache entries
+        for (const auto& kv : cache) {
+            const std::string& key = kv.first;
+            const CacheEntry& entry = kv.second;
+            
+            // Skip expired entries
+            if (is_cache_entry_expired(entry)) {
+                continue;
+            }
+            
+            json item;
+            item["key"] = key;
+            item["result"] = entry.result;
+            
+            // Store timestamp as milliseconds since epoch for portability
+            auto epoch_time = std::chrono::time_point_cast<std::chrono::milliseconds>(entry.timestamp);
+            auto epoch_count = epoch_time.time_since_epoch().count();
+            item["timestamp"] = epoch_count;
+            
+            cache_json.push_back(item);
+        }
+        
+        // Write to file
+        fs::path cache_file = index_dir / "search_cache.json";
+        std::ofstream ofs(cache_file);
+        if (ofs.is_open()) {
+            ofs << cache_json.dump(2);
+            ofs.close();
+            std::cerr << "[cache] Saved " << cache_json.size() << " search cache entries to " << cache_file << "\n";
+        } else {
+            std::cerr << "[cache] Failed to open " << cache_file << " for writing\n";
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[cache] Error saving search cache: " << e.what() << "\n";
+    }
+}
+
+// Load search cache from JSON file
+void Engine::load_cache() {
+    try {
+        fs::path cache_file = index_dir / "search_cache.json";
+        
+        if (!fs::exists(cache_file)) {
+            std::cerr << "[cache] No search cache file found at " << cache_file << "\n";
+            return;
+        }
+        
+        std::ifstream ifs(cache_file);
+        if (!ifs.is_open()) {
+            std::cerr << "[cache] Failed to open " << cache_file << " for reading\n";
+            return;
+        }
+        
+        json cache_json;
+        ifs >> cache_json;
+        ifs.close();
+        
+        if (!cache_json.is_array()) {
+            std::cerr << "[cache] Invalid cache file format (not an array)\n";
+            return;
+        }
+        
+        // Clear existing cache
+        cache.clear();
+        lru_list.clear();
+        
+        // Load entries
+        size_t loaded = 0;
+        size_t skipped_expired = 0;
+        auto now = std::chrono::steady_clock::now();
+        
+        for (const auto& item : cache_json) {
+            if (!item.contains("key") || !item.contains("result") || !item.contains("timestamp")) {
+                continue;
+            }
+            
+            std::string key = item["key"];
+            json result = item["result"];
+            
+            // Restore timestamp
+            int64_t epoch_millis = item["timestamp"];
+            auto epoch_time = std::chrono::milliseconds(epoch_millis);
+            auto timestamp = std::chrono::time_point<std::chrono::steady_clock>(
+                std::chrono::duration_cast<std::chrono::steady_clock::duration>(epoch_time)
+            );
+            
+            // Check if entry is expired
+            CacheEntry temp_entry;
+            temp_entry.timestamp = timestamp;
+            if (is_cache_entry_expired(temp_entry)) {
+                skipped_expired++;
+                continue;
+            }
+            
+            // Add to LRU list and cache
+            lru_list.push_back(key);  // Add at back (older entries)
+            CacheEntry entry;
+            entry.result = result;
+            entry.lru_iter = --lru_list.end();
+            entry.timestamp = timestamp;
+            cache[key] = entry;
+            loaded++;
+        }
+        
+        std::cerr << "[cache] Loaded " << loaded << " search cache entries";
+        if (skipped_expired > 0) {
+            std::cerr << " (skipped " << skipped_expired << " expired)";
+        }
+        std::cerr << "\n";
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[cache] Error loading search cache: " << e.what() << "\n";
+    }
+}
+
+// Save AI overview cache to JSON file
+void Engine::save_ai_cache() {
+    try {
+        json cache_json = json::array();
+        
+        // Serialize AI cache entries
+        for (const auto& kv : ai_cache) {
+            const std::string& key = kv.first;
+            const CacheEntry& entry = kv.second;
+            
+            // Skip expired entries
+            if (is_cache_entry_expired(entry)) {
+                continue;
+            }
+            
+            json item;
+            item["key"] = key;
+            item["result"] = entry.result;
+            
+            // Store timestamp as milliseconds since epoch for portability
+            auto epoch_time = std::chrono::time_point_cast<std::chrono::milliseconds>(entry.timestamp);
+            auto epoch_count = epoch_time.time_since_epoch().count();
+            item["timestamp"] = epoch_count;
+            
+            cache_json.push_back(item);
+        }
+        
+        // Write to file
+        fs::path cache_file = index_dir / "ai_cache.json";
+        std::ofstream ofs(cache_file);
+        if (ofs.is_open()) {
+            ofs << cache_json.dump(2);
+            ofs.close();
+            std::cerr << "[cache] Saved " << cache_json.size() << " AI cache entries to " << cache_file << "\n";
+        } else {
+            std::cerr << "[cache] Failed to open " << cache_file << " for writing\n";
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[cache] Error saving AI cache: " << e.what() << "\n";
+    }
+}
+
+// Load AI overview cache from JSON file
+void Engine::load_ai_cache() {
+    try {
+        fs::path cache_file = index_dir / "ai_cache.json";
+        
+        if (!fs::exists(cache_file)) {
+            std::cerr << "[cache] No AI cache file found at " << cache_file << "\n";
+            return;
+        }
+        
+        std::ifstream ifs(cache_file);
+        if (!ifs.is_open()) {
+            std::cerr << "[cache] Failed to open " << cache_file << " for reading\n";
+            return;
+        }
+        
+        json cache_json;
+        ifs >> cache_json;
+        ifs.close();
+        
+        if (!cache_json.is_array()) {
+            std::cerr << "[cache] Invalid AI cache file format (not an array)\n";
+            return;
+        }
+        
+        // Clear existing AI cache
+        ai_cache.clear();
+        ai_lru_list.clear();
+        
+        // Load entries
+        size_t loaded = 0;
+        size_t skipped_expired = 0;
+        auto now = std::chrono::steady_clock::now();
+        
+        for (const auto& item : cache_json) {
+            if (!item.contains("key") || !item.contains("result") || !item.contains("timestamp")) {
+                continue;
+            }
+            
+            std::string key = item["key"];
+            json result = item["result"];
+            
+            // Restore timestamp
+            int64_t epoch_millis = item["timestamp"];
+            auto epoch_time = std::chrono::milliseconds(epoch_millis);
+            auto timestamp = std::chrono::time_point<std::chrono::steady_clock>(
+                std::chrono::duration_cast<std::chrono::steady_clock::duration>(epoch_time)
+            );
+            
+            // Check if entry is expired
+            CacheEntry temp_entry;
+            temp_entry.timestamp = timestamp;
+            if (is_cache_entry_expired(temp_entry)) {
+                skipped_expired++;
+                continue;
+            }
+            
+            // Add to LRU list and cache
+            ai_lru_list.push_back(key);  // Add at back (older entries)
+            CacheEntry entry;
+            entry.result = result;
+            entry.lru_iter = --ai_lru_list.end();
+            entry.timestamp = timestamp;
+            ai_cache[key] = entry;
+            loaded++;
+        }
+        
+        std::cerr << "[cache] Loaded " << loaded << " AI cache entries";
+        if (skipped_expired > 0) {
+            std::cerr << " (skipped " << skipped_expired << " expired)";
+        }
+        std::cerr << "\n";
+        
+    } catch (const std::exception& e) {
+        std::cerr << "[cache] Error loading AI cache: " << e.what() << "\n";
+    }
 }
 
 } // namespace cord19

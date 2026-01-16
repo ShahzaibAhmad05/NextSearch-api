@@ -16,13 +16,15 @@ static std::string build_summary_system_prompt() {
     return R"(You are an AI assistant that generates short, informative summaries of scientific abstracts in proper markdown format with headings and newline chars.
 
     Your task is to analyze the provided abstract and create a clear summary that:
+
     1. Captures the main findings and key points
     2. Highlights the research objective and methodology if present
     3. Summarizes conclusions and implications
     4. Maintains scientific accuracy without speculation
     5. Uses clear, accessible language
 
-    Keep your summary concise, factual, and helpful. Format it in proper markdown with appropriate headings wherever needed.)";
+    To SUCCEED, FOLLOW THIS RULE:
+    - Format it in proper markdown with appropriate headings wherever needed.)";
 }
 
 // Helper function to build the user prompt with abstract
@@ -138,11 +140,6 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
                          bool is_authorized) {
     json response_json;
     
-    // Track AI summary call
-    if (stats) {
-        stats->increment_ai_summary_calls();
-    }
-    
     // Check cache first if engine is provided
     if (engine) {
         std::string cache_key = "summary|" + cord_uid;
@@ -153,8 +150,9 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
         if (!cached.is_null() && cached.contains("from_cache")) {
             std::cerr << "[ai_summary] Cache HIT for cord_uid: \"" << cord_uid << "\"\n";
             
-            // Track cache hit
+            // Track cache hit and increment calls (cache hit is still a call)
             if (stats) {
+                stats->increment_ai_summary_calls();
                 stats->increment_ai_summary_cache_hits();
             }
             
@@ -260,6 +258,11 @@ json generate_ai_summary(const AzureOpenAIConfig& config,
                 response_json["cord_uid"] = cord_uid;
                 response_json["summary"] = choice["message"]["content"];
                 response_json["cached"] = false;
+                
+                // Only increment ai_summary_calls on successful generation
+                if (stats) {
+                    stats->increment_ai_summary_calls();
+                }
                 
                 std::cerr << "[azure_openai] Successfully generated AI summary\n";
                 

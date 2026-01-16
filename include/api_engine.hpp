@@ -49,6 +49,11 @@ struct Engine {
     static constexpr size_t MAX_AI_CACHE_SIZE = 500;
     static constexpr std::chrono::hours AI_CACHE_EXPIRY_DURATION{24};
 
+    // Cache persistence counters (save to disk every N updates)
+    size_t cache_updates_since_save = 0;
+    size_t ai_cache_updates_since_save = 0;
+    static constexpr size_t CACHE_SAVE_INTERVAL = 10; // Save every 10 updates
+
     std::mutex mtx;
 
     bool reload();
@@ -61,6 +66,12 @@ struct Engine {
     // AI overview cache helpers (public for use by ai_overview module)
     json get_ai_from_cache(const std::string& cache_key);
     void put_ai_in_cache(const std::string& cache_key, const json& result);
+    
+    // Cache persistence (save/load to JSON files)
+    void save_cache();
+    void load_cache();
+    void save_ai_cache();
+    void load_ai_cache();
     
 private:
     json get_from_cache(const std::string& cache_key);
