@@ -22,7 +22,10 @@ static std::string build_system_prompt() {
     TO SUCCEED, FOLLOW THESE RULES:
     - The first paragraph should directly answer the user's query.
     - Add a horizontal rule (---) after the first paragraph.
-    - Format it in proper markdown,
+    - The first paragraph should be VERY SHORT.
+    - The overall overview should be SHORT.
+    - If the query is unrelated to the search results, state that clearly, and keep the response VERY VERY SHORT.
+    - Format it in proper markdown.
     - Use appropriate markdown headings wherever needed.)";
 }
 
