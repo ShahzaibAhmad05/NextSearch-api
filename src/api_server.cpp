@@ -106,16 +106,23 @@ int main(int argc, char** argv) {
 
     // CORS preflight handler (OPTIONS) for all routes
     svr.Options(R"(.*)", [](const httplib::Request& req, httplib::Response& res) {
-        cord19::enable_cors(res);
+        // Set CORS headers for preflight requests
+        res.set_header("Access-Control-Allow-Origin", "*");
+        res.set_header("Access-Control-Max-Age", "600");
 
         if (req.has_header("Access-Control-Request-Headers")) {
             res.set_header("Access-Control-Allow-Headers",
                            req.get_header_value("Access-Control-Request-Headers"));
+        } else {
+            res.set_header("Access-Control-Allow-Headers",
+                           "Content-Type, Accept, Origin, X-Requested-With, Authorization");
         }
 
         if (req.has_header("Access-Control-Request-Method")) {
             res.set_header("Access-Control-Allow-Methods",
                            req.get_header_value("Access-Control-Request-Method") + std::string(", OPTIONS"));
+        } else {
+            res.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         }
 
         res.status = 204;
