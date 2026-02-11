@@ -6,6 +6,8 @@ build/
 *.so
 *.dll
 *.dylib
+_codeql_build_dir/
+_codeql_detected_source_root
 
 # Index files
 *.idx
