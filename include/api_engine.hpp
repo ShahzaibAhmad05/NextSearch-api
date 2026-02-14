@@ -14,11 +14,10 @@
 
 namespace cord19 {
 
-// Cache entry structure for LRU cache with expiry
+// Cache entry structure for LRU cache
 struct CacheEntry {
     json result;
     std::list<std::string>::iterator lru_iter;
-    std::chrono::steady_clock::time_point timestamp;
 };
 
 struct Engine {
@@ -36,26 +35,23 @@ struct Engine {
     // If no embeddings are loaded, search falls back to keyword BM25.
     SemanticIndex sem;
 
-    // Search result cache: stores up to 2600 queries with LRU eviction and 24hr expiry
+    // Search result cache: stores up to 2600 queries with LRU eviction
     // Key format: "query|k" (e.g., "covid|10")
     std::unordered_map<std::string, CacheEntry> cache;
     std::list<std::string> lru_list; // Most recently used at front
     static constexpr size_t MAX_CACHE_SIZE = 2600;
-    static constexpr std::chrono::hours CACHE_EXPIRY_DURATION{24};
 
-    // AI overview cache: stores up to 500 AI overviews with LRU eviction and 7-day expiry
+    // AI overview cache: stores up to 500 AI overviews with LRU eviction
     // Key format: "query|k" (e.g., "covid|10") - same as search cache
     std::unordered_map<std::string, CacheEntry> ai_overview_cache;
     std::list<std::string> ai_overview_lru_list; // Most recently used at front
     static constexpr size_t MAX_AI_OVERVIEW_CACHE_SIZE = 500;
-    static constexpr std::chrono::hours AI_OVERVIEW_CACHE_EXPIRY_DURATION{168};
 
-    // AI summary cache: stores up to 1000 AI summaries with LRU eviction and 7-day expiry
+    // AI summary cache: stores up to 1000 AI summaries with LRU eviction
     // Key format: "summary|cord_uid" (e.g., "summary|abc123")
     std::unordered_map<std::string, CacheEntry> ai_summary_cache;
     std::list<std::string> ai_summary_lru_list; // Most recently used at front
     static constexpr size_t MAX_AI_SUMMARY_CACHE_SIZE = 1000;
-    static constexpr std::chrono::hours AI_SUMMARY_CACHE_EXPIRY_DURATION{168};
 
     // Cache persistence counters (save to disk every N updates)
     size_t cache_updates_since_save = 0;
@@ -91,7 +87,6 @@ struct Engine {
     
 private:
     json get_from_cache(const std::string& cache_key);
-    bool is_cache_entry_expired(const CacheEntry& entry);
     void put_in_cache(const std::string& cache_key, const json& result);
 };
 

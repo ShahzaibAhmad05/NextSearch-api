@@ -191,26 +191,11 @@ std::string Engine::make_cache_key(const std::string& query, int k) {
     return query + "|" + std::to_string(k);
 }
 
-// Check if cache entry is expired (older than 24 hours)
-bool Engine::is_cache_entry_expired(const CacheEntry& entry) {
-    auto now = std::chrono::steady_clock::now();
-    auto age = std::chrono::duration_cast<std::chrono::hours>(now - entry.timestamp);
-    return age >= CACHE_EXPIRY_DURATION;
-}
-
-// Get result from cache if available and not expired, update LRU
+// Get result from cache if available, update LRU
 json Engine::get_from_cache(const std::string& cache_key) {
     auto it = cache.find(cache_key);
     if (it == cache.end()) {
         return json(); // empty json means not found
-    }
-    
-    // Check if entry is expired
-    if (is_cache_entry_expired(it->second)) {
-        // Remove expired entry
-        lru_list.erase(it->second.lru_iter);
-        cache.erase(it);
-        return json(); // treat as cache miss
     }
     
     // Move to front of LRU list (most recently used)
@@ -224,43 +209,24 @@ json Engine::get_from_cache(const std::string& cache_key) {
     return result;
 }
 
-// Put result in cache with LRU eviction (expired entries evicted first)
+// Put result in cache with LRU eviction
 void Engine::put_in_cache(const std::string& cache_key, const json& result) {
-    auto now = std::chrono::steady_clock::now();
-    
     // Check if already in cache (shouldn't happen, but handle it)
     auto it = cache.find(cache_key);
     if (it != cache.end()) {
-        // Update existing entry with new timestamp
+        // Update existing entry
         lru_list.erase(it->second.lru_iter);
         lru_list.push_front(cache_key);
         it->second.result = result;
         it->second.lru_iter = lru_list.begin();
-        it->second.timestamp = now;
         return;
     }
     
-    // Evict if cache is full - prioritize expired entries
+    // Evict if cache is full - evict LRU (least recently used)
     if (cache.size() >= MAX_CACHE_SIZE) {
-        std::string key_to_evict;
-        bool found_expired = false;
+        std::string key_to_evict = lru_list.back();
         
-        // First, try to find an expired entry (scan from back - oldest entries)
-        for (auto lru_it = lru_list.rbegin(); lru_it != lru_list.rend(); ++lru_it) {
-            auto cache_it = cache.find(*lru_it);
-            if (cache_it != cache.end() && is_cache_entry_expired(cache_it->second)) {
-                key_to_evict = *lru_it;
-                found_expired = true;
-                break;
-            }
-        }
-        
-        // If no expired entry found, evict LRU (least recently used)
-        if (!found_expired) {
-            key_to_evict = lru_list.back();
-        }
-        
-        // Remove the selected entry
+        // Remove the LRU entry
         auto evict_it = cache.find(key_to_evict);
         if (evict_it != cache.end()) {
             lru_list.erase(evict_it->second.lru_iter);
@@ -268,12 +234,11 @@ void Engine::put_in_cache(const std::string& cache_key, const json& result) {
         }
     }
     
-    // Add new entry with timestamp
+    // Add new entry
     lru_list.push_front(cache_key);
     CacheEntry entry;
     entry.result = result;
     entry.lru_iter = lru_list.begin();
-    entry.timestamp = now;
     cache[cache_key] = entry;
     
     // Periodically save cache to disk (every N updates)
@@ -284,19 +249,11 @@ void Engine::put_in_cache(const std::string& cache_key, const json& result) {
     }
 }
 
-// Get AI overview from cache if available and not expired, update LRU
+// Get AI overview from cache if available, update LRU
 json Engine::get_ai_overview_from_cache(const std::string& cache_key) {
     auto it = ai_overview_cache.find(cache_key);
     if (it == ai_overview_cache.end()) {
         return json(); // empty json means not found
-    }
-    
-    // Check if entry is expired
-    if (is_cache_entry_expired(it->second)) {
-        // Remove expired entry
-        ai_overview_lru_list.erase(it->second.lru_iter);
-        ai_overview_cache.erase(it);
-        return json(); // treat as cache miss
     }
     
     // Move to front of LRU list (most recently used)
@@ -310,43 +267,24 @@ json Engine::get_ai_overview_from_cache(const std::string& cache_key) {
     return result;
 }
 
-// Put AI overview in cache with LRU eviction (expired entries evicted first)
+// Put AI overview in cache with LRU eviction
 void Engine::put_ai_overview_in_cache(const std::string& cache_key, const json& result) {
-    auto now = std::chrono::steady_clock::now();
-    
     // Check if already in cache (shouldn't happen, but handle it)
     auto it = ai_overview_cache.find(cache_key);
     if (it != ai_overview_cache.end()) {
-        // Update existing entry with new timestamp
+        // Update existing entry
         ai_overview_lru_list.erase(it->second.lru_iter);
         ai_overview_lru_list.push_front(cache_key);
         it->second.result = result;
         it->second.lru_iter = ai_overview_lru_list.begin();
-        it->second.timestamp = now;
         return;
     }
     
-    // Evict if cache is full - prioritize expired entries
+    // Evict if cache is full - evict LRU (least recently used)
     if (ai_overview_cache.size() >= MAX_AI_OVERVIEW_CACHE_SIZE) {
-        std::string key_to_evict;
-        bool found_expired = false;
+        std::string key_to_evict = ai_overview_lru_list.back();
         
-        // First, try to find an expired entry (scan from back - oldest entries)
-        for (auto lru_it = ai_overview_lru_list.rbegin(); lru_it != ai_overview_lru_list.rend(); ++lru_it) {
-            auto cache_it = ai_overview_cache.find(*lru_it);
-            if (cache_it != ai_overview_cache.end() && is_cache_entry_expired(cache_it->second)) {
-                key_to_evict = *lru_it;
-                found_expired = true;
-                break;
-            }
-        }
-        
-        // If no expired entry found, evict LRU (least recently used)
-        if (!found_expired) {
-            key_to_evict = ai_overview_lru_list.back();
-        }
-        
-        // Remove the selected entry
+        // Remove the LRU entry
         auto evict_it = ai_overview_cache.find(key_to_evict);
         if (evict_it != ai_overview_cache.end()) {
             ai_overview_lru_list.erase(evict_it->second.lru_iter);
@@ -354,12 +292,11 @@ void Engine::put_ai_overview_in_cache(const std::string& cache_key, const json& 
         }
     }
     
-    // Add new entry with timestamp
+    // Add new entry
     ai_overview_lru_list.push_front(cache_key);
     CacheEntry entry;
     entry.result = result;
     entry.lru_iter = ai_overview_lru_list.begin();
-    entry.timestamp = now;
     ai_overview_cache[cache_key] = entry;
     
     // Periodically save AI overview cache to disk (every N updates)
@@ -370,19 +307,11 @@ void Engine::put_ai_overview_in_cache(const std::string& cache_key, const json& 
     }
 }
 
-// Get AI summary from cache if available and not expired, update LRU
+// Get AI summary from cache if available, update LRU
 json Engine::get_ai_summary_from_cache(const std::string& cache_key) {
     auto it = ai_summary_cache.find(cache_key);
     if (it == ai_summary_cache.end()) {
         return json(); // empty json means not found
-    }
-    
-    // Check if entry is expired
-    if (is_cache_entry_expired(it->second)) {
-        // Remove expired entry
-        ai_summary_lru_list.erase(it->second.lru_iter);
-        ai_summary_cache.erase(it);
-        return json(); // treat as cache miss
     }
     
     // Move to front of LRU list (most recently used)
@@ -396,43 +325,24 @@ json Engine::get_ai_summary_from_cache(const std::string& cache_key) {
     return result;
 }
 
-// Put AI summary in cache with LRU eviction (expired entries evicted first)
+// Put AI summary in cache with LRU eviction
 void Engine::put_ai_summary_in_cache(const std::string& cache_key, const json& result) {
-    auto now = std::chrono::steady_clock::now();
-    
     // Check if already in cache (shouldn't happen, but handle it)
     auto it = ai_summary_cache.find(cache_key);
     if (it != ai_summary_cache.end()) {
-        // Update existing entry with new timestamp
+        // Update existing entry
         ai_summary_lru_list.erase(it->second.lru_iter);
         ai_summary_lru_list.push_front(cache_key);
         it->second.result = result;
         it->second.lru_iter = ai_summary_lru_list.begin();
-        it->second.timestamp = now;
         return;
     }
     
-    // Evict if cache is full - prioritize expired entries
+    // Evict if cache is full - evict LRU (least recently used)
     if (ai_summary_cache.size() >= MAX_AI_SUMMARY_CACHE_SIZE) {
-        std::string key_to_evict;
-        bool found_expired = false;
+        std::string key_to_evict = ai_summary_lru_list.back();
         
-        // First, try to find an expired entry (scan from back - oldest entries)
-        for (auto lru_it = ai_summary_lru_list.rbegin(); lru_it != ai_summary_lru_list.rend(); ++lru_it) {
-            auto cache_it = ai_summary_cache.find(*lru_it);
-            if (cache_it != ai_summary_cache.end() && is_cache_entry_expired(cache_it->second)) {
-                key_to_evict = *lru_it;
-                found_expired = true;
-                break;
-            }
-        }
-        
-        // If no expired entry found, evict LRU (least recently used)
-        if (!found_expired) {
-            key_to_evict = ai_summary_lru_list.back();
-        }
-        
-        // Remove the selected entry
+        // Remove the LRU entry
         auto evict_it = ai_summary_cache.find(key_to_evict);
         if (evict_it != ai_summary_cache.end()) {
             ai_summary_lru_list.erase(evict_it->second.lru_iter);
@@ -440,12 +350,11 @@ void Engine::put_ai_summary_in_cache(const std::string& cache_key, const json& r
         }
     }
     
-    // Add new entry with timestamp
+    // Add new entry
     ai_summary_lru_list.push_front(cache_key);
     CacheEntry entry;
     entry.result = result;
     entry.lru_iter = ai_summary_lru_list.begin();
-    entry.timestamp = now;
     ai_summary_cache[cache_key] = entry;
     
     // Periodically save AI summary cache to disk (every N updates)
@@ -642,19 +551,9 @@ void Engine::save_cache() {
             const std::string& key = kv.first;
             const CacheEntry& entry = kv.second;
             
-            // Skip expired entries
-            if (is_cache_entry_expired(entry)) {
-                continue;
-            }
-            
             json item;
             item["key"] = key;
             item["result"] = entry.result;
-            
-            // Store timestamp as milliseconds since epoch for portability
-            auto epoch_time = std::chrono::time_point_cast<std::chrono::milliseconds>(entry.timestamp);
-            auto epoch_count = epoch_time.time_since_epoch().count();
-            item["timestamp"] = epoch_count;
             
             cache_json.push_back(item);
         }
@@ -705,47 +604,25 @@ void Engine::load_cache() {
         
         // Load entries
         size_t loaded = 0;
-        size_t skipped_expired = 0;
-        auto now = std::chrono::steady_clock::now();
         
         for (const auto& item : cache_json) {
-            if (!item.contains("key") || !item.contains("result") || !item.contains("timestamp")) {
+            if (!item.contains("key") || !item.contains("result")) {
                 continue;
             }
             
             std::string key = item["key"];
             json result = item["result"];
             
-            // Restore timestamp
-            int64_t epoch_millis = item["timestamp"];
-            auto epoch_time = std::chrono::milliseconds(epoch_millis);
-            auto timestamp = std::chrono::time_point<std::chrono::steady_clock>(
-                std::chrono::duration_cast<std::chrono::steady_clock::duration>(epoch_time)
-            );
-            
-            // Check if entry is expired
-            CacheEntry temp_entry;
-            temp_entry.timestamp = timestamp;
-            if (is_cache_entry_expired(temp_entry)) {
-                skipped_expired++;
-                continue;
-            }
-            
             // Add to LRU list and cache
             lru_list.push_back(key);  // Add at back (older entries)
             CacheEntry entry;
             entry.result = result;
             entry.lru_iter = --lru_list.end();
-            entry.timestamp = timestamp;
             cache[key] = entry;
             loaded++;
         }
         
-        std::cerr << "[cache] Loaded " << loaded << " search cache entries";
-        if (skipped_expired > 0) {
-            std::cerr << " (skipped " << skipped_expired << " expired)";
-        }
-        std::cerr << "\n";
+        std::cerr << "[cache] Loaded " << loaded << " search cache entries\n";
         
     } catch (const std::exception& e) {
         std::cerr << "[cache] Error loading search cache: " << e.what() << "\n";
@@ -762,19 +639,9 @@ void Engine::save_ai_overview_cache() {
             const std::string& key = kv.first;
             const CacheEntry& entry = kv.second;
             
-            // Skip expired entries
-            if (is_cache_entry_expired(entry)) {
-                continue;
-            }
-            
             json item;
             item["key"] = key;
             item["result"] = entry.result;
-            
-            // Store timestamp as milliseconds since epoch for portability
-            auto epoch_time = std::chrono::time_point_cast<std::chrono::milliseconds>(entry.timestamp);
-            auto epoch_count = epoch_time.time_since_epoch().count();
-            item["timestamp"] = epoch_count;
             
             cache_json.push_back(item);
         }
@@ -825,47 +692,25 @@ void Engine::load_ai_overview_cache() {
         
         // Load entries
         size_t loaded = 0;
-        size_t skipped_expired = 0;
-        auto now = std::chrono::steady_clock::now();
         
         for (const auto& item : cache_json) {
-            if (!item.contains("key") || !item.contains("result") || !item.contains("timestamp")) {
+            if (!item.contains("key") || !item.contains("result")) {
                 continue;
             }
             
             std::string key = item["key"];
             json result = item["result"];
             
-            // Restore timestamp
-            int64_t epoch_millis = item["timestamp"];
-            auto epoch_time = std::chrono::milliseconds(epoch_millis);
-            auto timestamp = std::chrono::time_point<std::chrono::steady_clock>(
-                std::chrono::duration_cast<std::chrono::steady_clock::duration>(epoch_time)
-            );
-            
-            // Check if entry is expired
-            CacheEntry temp_entry;
-            temp_entry.timestamp = timestamp;
-            if (is_cache_entry_expired(temp_entry)) {
-                skipped_expired++;
-                continue;
-            }
-            
             // Add to LRU list and cache
             ai_overview_lru_list.push_back(key);  // Add at back (older entries)
             CacheEntry entry;
             entry.result = result;
             entry.lru_iter = --ai_overview_lru_list.end();
-            entry.timestamp = timestamp;
             ai_overview_cache[key] = entry;
             loaded++;
         }
         
-        std::cerr << "[cache] Loaded " << loaded << " AI overview cache entries";
-        if (skipped_expired > 0) {
-            std::cerr << " (skipped " << skipped_expired << " expired)";
-        }
-        std::cerr << "\n";
+        std::cerr << "[cache] Loaded " << loaded << " AI overview cache entries\n";
         
     } catch (const std::exception& e) {
         std::cerr << "[cache] Error loading AI overview cache: " << e.what() << "\n";
@@ -882,19 +727,9 @@ void Engine::save_ai_summary_cache() {
             const std::string& key = kv.first;
             const CacheEntry& entry = kv.second;
             
-            // Skip expired entries
-            if (is_cache_entry_expired(entry)) {
-                continue;
-            }
-            
             json item;
             item["key"] = key;
             item["result"] = entry.result;
-            
-            // Store timestamp as milliseconds since epoch for portability
-            auto epoch_time = std::chrono::time_point_cast<std::chrono::milliseconds>(entry.timestamp);
-            auto epoch_count = epoch_time.time_since_epoch().count();
-            item["timestamp"] = epoch_count;
             
             cache_json.push_back(item);
         }
@@ -945,47 +780,25 @@ void Engine::load_ai_summary_cache() {
         
         // Load entries
         size_t loaded = 0;
-        size_t skipped_expired = 0;
-        auto now = std::chrono::steady_clock::now();
         
         for (const auto& item : cache_json) {
-            if (!item.contains("key") || !item.contains("result") || !item.contains("timestamp")) {
+            if (!item.contains("key") || !item.contains("result")) {
                 continue;
             }
             
             std::string key = item["key"];
             json result = item["result"];
             
-            // Restore timestamp
-            int64_t epoch_millis = item["timestamp"];
-            auto epoch_time = std::chrono::milliseconds(epoch_millis);
-            auto timestamp = std::chrono::time_point<std::chrono::steady_clock>(
-                std::chrono::duration_cast<std::chrono::steady_clock::duration>(epoch_time)
-            );
-            
-            // Check if entry is expired
-            CacheEntry temp_entry;
-            temp_entry.timestamp = timestamp;
-            if (is_cache_entry_expired(temp_entry)) {
-                skipped_expired++;
-                continue;
-            }
-            
             // Add to LRU list and cache
             ai_summary_lru_list.push_back(key);  // Add at back (older entries)
             CacheEntry entry;
             entry.result = result;
             entry.lru_iter = --ai_summary_lru_list.end();
-            entry.timestamp = timestamp;
             ai_summary_cache[key] = entry;
             loaded++;
         }
         
-        std::cerr << "[cache] Loaded " << loaded << " AI summary cache entries";
-        if (skipped_expired > 0) {
-            std::cerr << " (skipped " << skipped_expired << " expired)";
-        }
-        std::cerr << "\n";
+        std::cerr << "[cache] Loaded " << loaded << " AI summary cache entries\n";
         
     } catch (const std::exception& e) {
         std::cerr << "[cache] Error loading AI summary cache: " << e.what() << "\n";
