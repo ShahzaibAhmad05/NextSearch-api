@@ -387,15 +387,3 @@ curl "http://localhost:8080/api/search?q=covid&k=10"
 # Autocomplete
 curl "http://localhost:8080/api/suggest?q=cov&k=5"
 ```
-
----
-
-## Docker
-
-```bash
-# Build
-docker build -t nextsearch .
-
-# Run
-docker run -p 8080:8080 -v $(pwd)/index:/app/index nextsearch
-```
