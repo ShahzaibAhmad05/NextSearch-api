@@ -66,8 +66,8 @@ Base URL: `http://localhost:8080`
 **Parameters:**
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `q` | string | ✅ Yes | - | Search query |
-| `k` | int | ❌ No | 10 | Number of results (1-100) |
+| `q` | string |  Yes | - | Search query |
+| `k` | int |  No | 10 | Number of results (1-100) |
 
 **Response:**
 ```json
@@ -101,8 +101,8 @@ Base URL: `http://localhost:8080`
 **Parameters:**
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `q` | string | ✅ Yes | - | Partial query to autocomplete |
-| `k` | int | ❌ No | 5 | Number of suggestions |
+| `q` | string |  Yes | - | Partial query to autocomplete |
+| `k` | int |  No | 5 | Number of suggestions |
 
 **Response:**
 ```json
@@ -125,13 +125,13 @@ Generates an AI-powered overview by analyzing search results using Azure OpenAI.
 **Parameters:**
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `q` | string | ✅ Yes | - | Search query |
-| `k` | int | ❌ No | 10 | Number of results to analyze |
+| `q` | string |  Yes | - | Search query |
+| `k` | int |  No | 10 | Number of results to analyze |
 
 **Headers:**
 | Header | Required | Description |
 |--------|----------|-------------|
-| `Authorization: Bearer <token>` | ❌ No | Admin JWT (skips API call limit) |
+| `Authorization: Bearer <token>` |  No | Admin JWT (skips API call limit) |
 
 **Response:**
 ```json
@@ -156,12 +156,12 @@ Generates an AI-powered summary of a specific document's abstract.
 **Parameters:**
 | Param | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `cord_uid` | string | ✅ Yes | - | Document unique identifier |
+| `cord_uid` | string |  Yes | - | Document unique identifier |
 
 **Headers:**
 | Header | Required | Description |
 |--------|----------|-------------|
-| `Authorization: Bearer <token>` | ❌ No | Admin JWT (skips API call limit) |
+| `Authorization: Bearer <token>` |  No | Admin JWT (skips API call limit) |
 
 **Response:**
 ```json
@@ -182,8 +182,8 @@ Upload a CORD-19 zip file to create a new index segment.
 **Headers:**
 | Header | Required | Description |
 |--------|----------|-------------|
-| `Authorization: Bearer <token>` | ✅ Yes | Admin JWT token |
-| `Content-Type` | ✅ Yes | `multipart/form-data` |
+| `Authorization: Bearer <token>` |  Yes | Admin JWT token |
+| `Content-Type` |  Yes | `multipart/form-data` |
 
 **Body:**
 - File field: `cord_slice` (ZIP file containing `metadata.csv` and `document_parses/`)
@@ -247,7 +247,7 @@ Retrieve API usage statistics.
 **Headers:**
 | Header | Required | Description |
 |--------|----------|-------------|
-| `Authorization: Bearer <token>` | ✅ Yes | Admin JWT token |
+| `Authorization: Bearer <token>` |  Yes | Admin JWT token |
 
 **Response:**
 ```json
@@ -311,7 +311,7 @@ Check if JWT token is valid.
 **Headers:**
 | Header | Required | Description |
 |--------|----------|-------------|
-| `Authorization: Bearer <token>` | ✅ Yes | Admin JWT token |
+| `Authorization: Bearer <token>` |  Yes | Admin JWT token |
 
 **Response:**
 ```json
